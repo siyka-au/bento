@@ -1,608 +1,89 @@
-Changelog
-=========
+# Changelog
 
-All notable changes to this project will be documented in this file.
+Changes made in this fork (`siyka-au/bento`) relative to upstream
+`warpstreamlabs/bento`. Upstream's own release history is not repeated here, so
+sections are titled by topic rather than by version, which avoids clashing with
+upstream version numbers when merging `upstream/main`.
 
-## Unreleased
+This project uses [Conventional Commits](https://www.conventionalcommits.org/)
+for commit messages.
 
-### Added
+## [fork] slog-native logging and OTel log export
 
-- `prefix` field added to `aws_s3` and `gcp_cloud_storage` caches enabling multiple caches to share a bucket, scoping all operations including key listings @ecordell
-- `aws_sqs` input field `visibility_timeout`, previously hardcoded to 30s, which follows the queue's own timeout when set to `0` @ReguiguiMohamed
+Bento's logger was backed by logrus, which predates the standard library's
+`log/slog` package. The internal logger is now built on `slog`, so the logging
+surface matches `go-ads` and any OpenTelemetry bridge can plug in directly. The
+`log.Modular` interface is unchanged, so no component call sites moved.
 
-### Fixed
+`TRACE` and `FATAL` are custom `slog` levels, using the same values as go-ads.
 
-- `aws_sqs` input looked for the queue's `VisibilityTimeout` on each message, which `ReceiveMessage` never returns, so in-flight messages could not be refreshed with anything but 30s @ReguiguiMohamed
-- `gcp_bigquery_write_api` output's `batching.byte_size` lint rule triggered at 1 MB while claiming a 10 MB limit, incorrectly flagging valid batch configurations well under BigQuery's actual `AppendRows` request size limit @SJ1397
+A new `logger.otel` block exports every record over OTLP (grpc or http). It is a
+sub-block rather than a `type:`/`plugin:` backend like `metrics` and `tracer`,
+because there is only ever one process-wide logger. Records go to the primary
+output and the collector in the same pass, and both respect `logger.level`.
 
-## 1.21.2 - 2026-09-11 
+### Breaking
 
-### Changed
+- **logfmt output changed.** Levels are uppercase (`level=WARN`, not
+  `level=warning`), and attributes keep insertion order rather than being sorted
+  alphabetically. Anything parsing bento's own text logs must be updated. JSON
+  logs keep their existing field names. Prefer `format: json` for parsers.
 
- - Updated to Go version 1.27.1 @gregfurman
- - migrated MSSQL driver to official microsoft/go-mssqldb @cmelanson
- - upgraded apache/pulsar client to v0.21.0 @slachiewicz
- - upgraded gosnowflake to v2 @jem-davies
+Before (logrus):
 
-## 1.21.1 - 2026-08-26
+```
+level=warning msg="Warning message" @service=bento count=10 foo=bar
+```
 
-### Fixed
+After (slog):
 
-- `kafka_franz` output field `broker_write_max_bytes` misconfigured (introduced in version 1.21.0) @jem-davies
-
-## 1.21.0 - 2026-08-21
-
-### Added
-
-- Optional `Keys` method for caches enabling consumers of cache resources to enumerate keys, caches that do not support key listing yield `ErrKeyListingNotSupported` @ecordell
-- `memory`, `file`, `aws_s3` and `gcp_cloud_storage` caches support `Keys` @ecordell
-- `bucket` field on `aws_s3` output supports bloblang interpolation @jem-davies
-- Cache operation `exists` which checks caches for keys @lublak
-- `extract_tracing_map` and `new_root_span_with_link` on the `gcp_pubsub` input & `inject_tracing_map` on the `gcp_pubsub` output @jesperanzasolo
-- `transaction_isolation_level` field to `kafka` & `kafka_franz` components @mbuckley2000
-- `send_ack` field on `nats` input enables/disables sending acknowledgement back to nats' input subject reply address @ahart97
-- Optional ListableCache interface for caches that support key listing - with implementations for `memory`, `file`, `aws_s3` & `gcp_cloud_storage`
-- `broker_read_max_bytes` to `kafka_franz` input and `broker_write_max_bytes` & `max_buffered_bytes` options to `kafka_franz` output @jem-davies
-
-### Fixed
-
-- `parse_big_decimal` rejects scales above 16383 to avoid unbounded big-integer work @aratz-lasa
-- stale buffer example path in internal/impl README @youdie006
-- `fsevent` preserves file create events when watching new subdirs @mattfaltyn
-- `aws_s3_stream` handles files smaller than S3's minimum multipart size @triddell
-
-### Changed
-
-- `apache/pulsar-client-go` updated to v0.21.0, picking up fixes for a consumer busy-spin deadlock, a connection panic on close, and a race that dropped messages before handler registration @slachiewicz
-
-### Security
-
-- **Breaking:** Addressed [GO-2026-5048](https://github.com/advisories/GHSA-mx64-mj3q-7prj) by replacing `github.com/hamba/avro/v2` with `github.com/iskorotkov/avro/v2`, temporarily disabling `go install github.com/warpstreamlabs/bento/cmd/bento@<version>` due to `replace` directive usage.
-- bump Go version to 1.26.6 to fix various CVEs in the standard library @jem-davies
-
-## 1.20.0 - 2026-07-27
+```
+level=WARN msg="Warning message" @service=bento foo=bar count=10
+```
 
 ### Added
 
-- `parse_big_decimal` bloblang method for Kafka Connect / Debezium decimal decoding @aratz-lasa
-- `aws_bedrock_invoke` processor for invoking Amazon Bedrock models @louisdvs & @gregfurman
-
-### Fixed 
-
-- Fixed keyless records in the `kafka_franz` components being routed to a single partition @jem-davies
-- `batchErr` mutex locking in the `elasticsearch_v2` output @jem-davies
-- updated various dependencies to address CVEs 
-
-## 1.19.0 - 2026-07-10
-
-### Added
-
- - `grpc_client` input component @jem-davies
- - `sync_response` added to nats input NATS @henrikschristensen
- - `endpoint` config option added to `gcp_bigquery` output @Shareed2k
- - RLE_DICTIONARY support to `parquet` default encoding @georgeTobia
- - `elasticsearch` processor @Omar1H1
- - `json_number_type` config option added to `aws_dynamodb` output enables JSON numbers to be either stored as dynamoDB Strings / Numbers @cthorner
- - `negotiate` config options added to `http` components to enable SPNEGO auth @lublak
- - `timestamp` field added to `gcp_bigtable` enabling setting timestamps @gregfurman
- - `restart_backoff` fields added to `read_until` input enable setting a backoff policy for when the child input restarts @aramperes
-
-### Fixed
-
- - `aws_dynamodb` output no longer drops successfully-built messages when another message in the batch fails request construction @cthorner
- - `aws_kinesis` assign msgChan after succesful connection @richardartoul
- - `aws_kinesis` input fixed a nil pointer panic when `ListShards` returned an error @richardartoul
- - `aws_kinesis` input fixed `ListShards` pagination error @gregfurman
- - `omit_if_empty` config option added to `aws_dynamodb` enabling the correction of previously documented behaviour that missing paths are omitted rather than written as null @cthorner
- - `aws_kinesis` input fixed shard consumer busy-loop and excess timer allocations noticible at high shard counts @richardartoul
- - `schema_registry_decode` & `schema_registry_encode` fixed for schema's whose subject contained a `/` @PitchBlack07
-
-### Changed
-
- - `aws_kinesis` input simplified EFO architecture to align with Amazon's Kinesis Client @matus-tomlein
-
-## 1.18.1 - 2026-06-05
-
-### Fixed
-
- - `avro` scanner call Scan() before Read() @istairbn
- - `protobuf` processor buf schema registry poller goroutine leak @jem-davies
-
-### Changed
-
- - upgrade to Go version 1.26.4 @jem-davies
- - upgrade `otlp` dependency @jem-davies
-
-
-## 1.18.0 - 2026-05-25
-
-### Added 
-
- - `template` processor enabling use of Go template syntax for message transformations @lublak
- - `fsevent` input creates messages for file-system events with metadata pertaining to event @henrikschristensen
- - `duckdb_append` output inserts rows into a DuckDB database using the Appender API @iamramtin
- - `digest_auth` fields on http components enabling digest authentication @lublak
- - `oauth2` fields on `kafka` & `kafka_franz` enabling oauth2 authentication @vsl86 & @jem-davies
- - `emit_unpopulated` field to `protobuf` processor enabling emitting unpopulated fields with their default JSON values @matta-dev
- - Environment variable "BENTO_CONFIG" is checked for Bento Configuration @jem-davies
- - `checksum_algorithm` field added to `aws_s3` when set Bento computes the checksum for s3 to check @seanbarzilay
-
-### Fixed 
-
- - `file` processor `delete` operation fixed for windows @henrikschristensen
- - goroutine leak in SQL components @adrianhaj
- - nil-check added to `sql_raw` output @adrianhaj
- - `kafka_franz` input to attach logger regardless of consumer group being set @gregfurman
-
-### Changed 
-
- - updated to Go version 1.26 @gregfurman & @jem-davies
- - upgrade sarama to 1.47.0 (`kafka` component library) @gitphill
- - upgrade golang/x/net for CVE @jem-davies
- - removed reference to deprecated 'Optional' field in cuegen @aebrahim
- - `kafka_franz` franz-go logs to surface at `ERROR/WARN/INFO/DEBUG` instead of `ERROR/WARN/DEBUG/TRACE` @gregfurman
-
-## 1.17.0 - 2026-04-15
-
-### Added 
-
- - `sanitize_namespace_names` field to `schema_registry_decode` processor @jem-davies
- - `api_key` to `elasticsearch_v2` output adding the option to use a elasticsearch API key to connect @alexthemayers
- - `extract_tracing_map` and `new_root_span_with_link` fields to the kafka_franz input @danielavelez12
- - `kafka_timestamp_ms` metadata fields to both `kafka_franz` and `kafka` @dnson & @sonnydinhgc
- - new `file` processor @henrikschristensen
-
-### Changed
-
- - upgrade OTEL dependencies for CVE @gitphill
- - upgrade go-jose/v4 to v4.1.4 for CVE
- - upgrade lambda distribution & update docs @jem-davies
-
-## 1.16.2 - 2026-03-31
-
-### Fixed 
-
- - `aws_kinesis` input busy loop when `batching.period` is set @jem-davies
- - various dependency updates for CVEs 
-
-## 1.16.1 - 2026-03-19
-
-### Fixed
-
-- add handling for authentication errors in SQL output components @adrianhaj
-
-### Added
-
-- `datadog_logs` output component @gregfurman
-
-## 1.16.0 - 2026-03-18
-
-### Added 
-
- - `headers` field added to `websocket` output enables setting custom headers to the websocket handshake @DackJempsey
- - `enhanced_fan_out` configuration options for `aws_kinesis` input @jbeemster & @matus-tomlein
- - `aws_s3_stream` output streams data to S3 using multipart uploads @triddell 
- - `duckdb` driver option added to sql components; @sapk & @James-Gilbert-
- - `debug` field added to `kafka` input; enabling will forward sarama's internal logs to Bento's logger @gitphill
- - `error_source_label`, `error_source_path`, `error_source_type` bloblang functions @gregfurman
- - `payload` field added to `http` processor & `http_client` output; alternative to using the message as the payload @lublak
- - `python` processor; WASM-based Python processor @gregfurman
-
-### Changed 
-
- - Modernize Go syntax with `go fix`; included 'modernize' linter in CI @gregfurman & @jem-davies
- - Enabled use of `# BENTO LINT DISABLE` token in component example documentation @iamramtin
-
-## 1.15.2 - 2026-03-11
-
-### Added
-
-- `datadog_logs` output component @gregfurman
-
-## 1.15.1 - 2026-03-08
-
-### Added
-
-- `gcp_bigtable` output component @gregfurman
-
-## 1.15.0 2026-02-08
-
-### Added
-
-- json schema generator tool that produces a json schema for Bento config, available from schemastore.org @mueckinger
-- `set_metadata` field to `opensnowcat` processor @joaolcorreia
-- updated internal message proto spec for multi-batch support @gregfurman
-- `kubernetes_watch` input watches kubernetes resources for changes @aronchick
-- `couchbase` output component @sapk
-- input `file_tail` consumes lines written to local files @jem-davies
-
-### Changed
-
-- `s2` input & output component updated (`auth_token` field replaced with `access_token`) @infiniteregrets 
-- Added flow IDs and timestamps to tracing events, plus `EventsByFlowID` grouping @sananguliyev
-
-### Fixed
-
-- Scanner: handle nil AckFunc in AckOnce @ksinica
-
-## 1.14.1 - 2026-01-12
-
-### Fixed
-
-- `error_handling.strategy` override now correctly parses bloblang named arguments @gregfurman
-
-## 1.14.0 - 2026-01-02
-
-### Fixed
-
-- reconnect logic for `mongodb` output @mladBlum
-
-### Added
-
-- `parquet_encode` processor now includes support for native Struct types @triddell
-- `file_rel_json` bloblang function which loads, parses & caches JSON files @triddell
-- `ttl` field to `couchbase` processor enabling optional setting of TTL for couchbase items @sapk
-- `LeveledLogger` interface added to service package enabling simpler use of custom loggers @gregfurman
-- `opensnowcat` processor includes `enriched_json` option for `output_format` @joaolcorreia
-- `RegisterManagedConstructor` added enabling registration of initialisation functions with access to service resources @gregfurman
-- `cache_get`, `cache_set`, `cache_delete` & `cache_add` bloblang functions (made possible by `RegisterManagedConstructor`) @gregfurman
-- `couchbase` increment & decrement operations @sapk
-- `new_root_span_with_link` field added to various `kafka` & `nats` components @gregfurman 
-- `expiry_window` added to AWS `credentials` config allowing the credentials to trigger refreshing prior to the credentials actually expiring @gitphill
-- `grpc_client` output component @jem-davies
-
-## 1.13.1 - 2025-12-04
-
-### Fixed 
-
-- `parquet_encode` processor adds safeguard for schema fields beginning with non-alphabetic characters @gregfurman
-
-## 1.13.0 - 2025-12-02
-
-### Added 
-
-- `allow_headers` & `allow_methods` to cors config for `http_server` @jem-davies
-- `transport` field exposes options to enable custom http transports with `http` components & `schema_registry_encode/decode` components @jem-davies
-- `slack_webhook` output publishes messages to Slack via webhook @bhataprameya
-- `memory` buffer includes 'spillover' and 'active' metrics to track: bytes dropped and bytes in the buffer @alecmerdler 
-- `auth_secret` field added to `nsq` input & output enables connection with authentication @danrjohnson
-- new input `azure_service_bus_queue` with azure default credentials support @adrianhaj
-- `spillover` field to `memory` cache allows option of dropping incoming messages that would exceed the cache limit @alecmerdler
-
-### Changed
-
-- ServiceBuilder API now logs lint warnings @jem-davies
-- upgrade sarama dependency for `kafka` components @gitphill
-
-### Fixed
-
-- `aws_kinesis` input now properly handles pagination over kinesis shards @gregfurman
-- sql outputs reconnect logic avoids race condition @gregfurman
-
-## 1.12.1 - 2025-10-24
-
-### Fixed 
-
-- `gcp_bigquery_write_api` now propagates error when failing to acquire a stream
-
-## 1.12.0 - 2025-10-21
-
-### Added 
-
-- `use_default_registry` field to Prometheus metrics config to expose stream metrics on the default registry @alecmerdler
-- 'Python-like' slices added to Bloblang using a square bracket syntax @iamramtin
-- `cosine_similarity` function added to Bloblang @gregfurman
-- simple perfomance benchmark test for `kafka_franz` @jem-davies
-- readiness check `IsReady()` add to StreamBuilder API @alecmerdler
-- `opensnowcat` experimental processor @joaolcorreia
-- `headers` field added to `websocket` input enabling specification of custom headers to add to the websocket handshake @exside
-
-### Changed
-
- - Go version increased to 1.25 @gregfurman & @jem-davies
- - review various component Statuses & promote various to Stable @jem-davies
-
-### Fixed
-
- - flaky test `TestHTTPServerOutputSSEHeartbeat` in output_http_server_test.go @HankStat
- - flaky test `TestRetryParallel` in output_retry_test.go @HankStat
- - flaky test `TestHealthCheck` in serverless/lambda @HankStat
- - integration_bigquery_test.go @jem-davies
- - flaky test `TestWorkflowUnwrapResourceBranches` @HankStat
- - update container image for integration tests pertaining to `etcd` & `kafka` components,  @gregfurman
- - race condition on cockroachdb input `Close()` & port-confict with test @gregfurman
-
-## 1.11.0 - 2025-09-19
-
-### Added
-
-- new bloblang method `split_by`, similar to `split` but takes a predicate rather than a value for the delimiter @iamramtin
-- `nlp_classify_text`, `nlp_classify_tokens`, `nlp_extract_features` & `nlp_zero_shot_classify` processors enable use of ONNX NLP models @gregfurman
-- `elasticsearch_v2` output component, uses official elasticsearch go client @jem-davies
-- `gcp_spanner_cdc` consumes Spanner Change Stream Events from a GCP Spanner instance @anicoll & @gregfurman
-
-### Changed
-
-- deprecated `elasticsearch` output @jem-davies
-- deprecated `parquet` processor removed @jem-davies
-- `golangci-lint` upgraded to V2 @miparnisari
-- bloblang method `split` can now operate on arrays as well as strings @iamramtin
-
-### Fixed
-
-- fix input `azure_blob_storage` failing to delete blobs when using `targets_input` & `delete_object: true` @adrianhag
-- fix `inject_tracing_map` config examples @eastnine90
-- fix data-race in config/schema.go @miparnisari
-- fix data-race in sql dsn building @gregfurman
-- fix validation for the seed_brokers config field in `kafka_franz` @gregfurman
-- fix oracle integration tests @jem-davies
-
-## 1.10.2 - 2025-09-15
-
-### Fixed 
-
-- `sql_insert` & `sql_raw` output components check connection, and will attempt reconnection via Components' Connect() func @jem-davies
-
-## 1.10.1 - 2025-09-10
-
-### Fixed 
-
- - fix data-race in sql dsn building @gregfurman
- - fix issue connecting to RDS via IAM Auth @gregfurman
-
-## 1.10.0 - 2025-08-14
-
-### Added
-
-- `SharedMetricsSetup` added to service package enabling multiple streams created with StreamBuilder to share the same metric registry @ecordell
-- `azure` fields added to SQL components enabling using Azure based auth for Azure Postgres SQL @jem-davies
-- `aws_dynamodb` output also supports deleting items from a dynamodb table @rohankumardubey & @jem-davies
-- WASM bloblang playground to doc site @iamramtin
-- reconnect config options to `zmq4n` output @gregfurman
-- `MockResourcesOptUseSlogger` function to enable setting a logger on MockResources @jem-davies
-
-### Changed
-
-- Bento will emit warning logs if a config is using a deprecated component/field @jem-davies
-- CSV scanner & input will now error if a config sets `parse_header_row` is false & `expected_headers` is non-empty @rohankumardubey
-
-## 1.9.1 - 2025-07-29
-
-### Fixed 
-
-- multipart s3 uploads for `aws_s3` output destination @Towerthousand
-
-## 1.9.0 - 2025-07-07
-
-- update `parquet-go` dependency from `0.23.0` to `0.24.0` @gregfurman
-
-### Added 
-
-- `create` added to `opensearch`'s `action` field to support write to data streams @arnitolog
-- `message_format` to `gcp_bigquery_write_api` enabling protobuf messages to be sent without need for marshalling to json @gregfurman
-- `use_parquet_list_format` flag to `parquet_decode` allowing a `LIST` column to return as either a Parquet logical type or Go slice @gregfurman
-
-### Changed 
-
-- Full rework of local bloblang editor/playground to be shinier, prettier, and more interactive @iamramtin
-- metadata `gcp_pubsub_message_id` & `gcp_pubsub_ordering_key` added to `gcp_pubsub` input @anicoll
-
-## 1.8.2 - 2025-06-25
-
-### Fixed 
-
-- `aws_cloudwatch` metrics not flushed before Bento shutdown @jem-davies
-
-## 1.8.1 - 2025-06-17
-
-### Added 
-
-- `AWS_MSK_IAM` option to `kafka` components `sasl.mechanism` @gitphill
-
-## 1.8.0 - 2025-06-08
-
-### Added 
-
-- `iam_enabled` field to sql components enables connection to aws rds instances via iam authentication @gregfurman & @jem-davies
-- `nats_object_store` components enable connecting to a nats object store @jem-davies
-- `reconnect_on_unknown_topic` field enables the `kafka_franz` input to handle recreated topics @brianshih1
-- `expected_headers` & `expected_number_of_fields` added to `csv` input providing more validation options @etolbakov
-
-### Fixed 
-
-- `elasticsearch` output `tls` connections @jem-davies
-
-### Changed 
-
-- `open_message` field in `websocket` input deprecated for `open_messages` enabling sending multiple messages to the server upon connection @jr200
-- `ResourceFromYAML` test helpers to use constant during string formatting, in preparation for Go 1.24 update @gregfurman
-
-## 1.7.1 - 2025-05-13 
-
-- enabled `error_handling.strategy` fields when using streamBuilder.Build() @MaudGautier
-- update gosnowflake dependency and fix test @gregfurman
-
-## 1.7.0 - 2025-05-07
-
-### Added 
-
-- `xml_documents_to_json` & `xml_documents_to_json:cast` options to `unarchive` processor `format` field @lublak 
-- `xml_documents` scanner - consumes a stream of one or more XML documents into discrete messages @lublak
-- `bsr` fields to `protobuf` processor - enables loading & using schemas from a remote "Buf Schema Registry" @oliver-anz
-- `stream_format` and `heartbeat` fields to `http_server` output to emit Server-Side Events (SSE) @asoorm
-
-### Fixed 
-
-- ignoring context cancellation / timeout during graceful shutdown of streams for error logging purposes @jub0bs 
-- public implementations of `MessageAwareRateLimit` now correctly register @MaudGautier
-
-## 1.6.1 - 2025-05-06
-
-- update apache/pulsar-client-go dependency for CVE @gregfurman
-
-## 1.6.0 - 2025-03-30
-
-### Changed 
-
-- experimental 'strict' / 'retry' error handling modes will be overridden in presence of incompatible components/bloblang @gregfurman & @jem-davies
-- discord `bot_token` field marked as secret @jem-davies
-- `golang.org/x/exp/rand` replaced with `math/rand/v2` @Juneezee
-- AWS tests refactored to use LocalStack fixture and pro-token @gregfurman
-- update JWT dependency @gitphill
-
-### Added 
-
-- field `ws_message_type` in output `http_server` @cheparinV
-- experimental 'retry' error handling mode @gregfurman
-- fields `backoff_duration` and `start_seq_num` to `s2` input @vrongmeal
-- input component `cypher` @jem-davies
-- field `auto_offset_reset` added to `kafka_franz` input, matching Kafka's `auto.offset.reset` config for when a consumer group has no initial committed consumer offset available @gregfurman
-- fields `expected_headers` and `expected_number_of_fields` to `csv`  scanner @jem-davies
-- fields `update_visibility` and `custom_request_headers` to `sqs` input @gregfurman
-
-### Fixed
-
-- MQTT integration tests @gregfurman
-- GCP integration tests @gregfurman
-- GCP PubSub integration tests @jem-davies
-- Kafka integration tests @gregfurman
-- metadata creation in `sqs` input to now include all message attributes @gregfurman
-
-## 1.5.2 - 2025-03-12
-
-- upgrade to go 1.23 @gitphill
-- various dependency updates for CVEs @gitphill
-
-## 1.5.1 - 2025-02-14
-
-### Fixed 
-
-- check for shutdown before using fallback output component @jem-davies
-- only load aws cred if using postgres + secretName in sql components @jem-davies
-
-## 1.5.0 - 2025-02-07
-
-### Changed
-
-- log message format in `gcp_bigquery_write_api` @richardartoul
-- enabled bloblang interpolation in `gcp_cloud_storage` input @paulosimao-ardanlabs
-- add metadata values to `nats_kv` processor @kmpm
-
-### Added
-
-- `rate_limit` field in `kafka_franz` input @gregfurman
-- `unsafe_dynamic_query` added to `gcp_bigquery_select` processor @jem-davies
-- `delete_objects` added to `aws_s3` processor @gregfurman
-- bloblang string method `repeat` @jem-davies
-- plugin example module `./resources/plugin-example` @jem-davies
-- zeromq input & output components @kmpm
-- tls config field for `cypher` output @jem-davies
-- `s2` input & output components @vrongmeal
-- 'sampling bundle' for logging @gregfurman
-
-### Fixed 
-
-- replace directive for github.com/AthenZ/athenz depenency @gregfurman
-- change default encoding from DELTA_LENGTH_BYTE_ARRAY to PLAIN for string fields for parquet encodings @gregfurman
-
-## 1.4.1 - 2025-01-04
-
-### Changed
-
-- updated various dependencies to address CVEs @jbeemster
-
-## 1.4.0 - 2024-12-08
-
-### Added
-
-- Rate limiting functionality to rate-limit based on bytes @gregfurman
-- `error_handling.strategy` config field to override Bento's default error handling @gregfurman
-- Experimental `aws_s3` processor  @jem-davies
-- Experimental `log_all_errors` field to `logger` config that promotes any log containing an error type to the ERROR level @gregfurman
-- `batch_policy.jitter` field to add a random delay to batch flush intervals @gregfurman
-- `strategy` field to `dedupe` processor @gregfurman
-- Experimental `cypher` output component @jem-davies
-
-### Changed
-
-- updated opensearch-go to v4 @arnitolog
-- updated the go.mod file to specify Go version 1.22
-
-### Fixed
-
-- Doc site search indexing @gregfurman
-- Removed unused benthos studio package @gregfurman
-- Error handling issue with `opensearch` output @arnitolog
-- incorrect reference to `restart_on_close` in `subprocess` processor docs @dacalabrese
-- "zombie" http output websocket connections @buger
-- correctly set Bento binary information at build-time in CI @jem-davies
-
-## 1.3.0 - 2024-11-04
-
-### Added
-
-- Exposed option to enable event flushing for processor events & input events @sananguliyev
-- Added `QuestDB` output component @sklarsa
-- Added `spanner` driver to SQL components @rvilim
-- Added more config fields to `kafka_franz` input component @gregfurman
-- Added `gcp_bigquery_write_api` output component @gregfurman
-- Added AWS config fields to SQL Components to enable storing user/password in AWS Secret Manager @jem-davies
-- Added more types to `parquet_encode` processor @ryanworl
-- Altered default value for field `cas_enabled` to true in `couchbase` processor @sapk
-
-### Changed
-
-- Improved parquet handling of optional decimals and float <> float conversions @richardartoul
-- Altered `gcp_bigquery` config field `table` to allow interpolation @jem-davies
-
-## 1.2.0 - 2024-08-21
-
-### Added
-
-- avro_schema_nested field to registry_schema_decode/encode @jem-davies
-- etcd-component input for watching an etcd key or prefix @gregfurman
-- Couchbase: add CAS support and disable by default @sapk
-- sql: Add optional verification ping on database client initialisation @gregfurman
-
-### Upstream Changes
-
-- [v4.31.0 - 2024-07-18](./CHANGELOG.old.md#4.31.0-2024-07-18)  
-
-## 1.1.0 - 2024-07-12
-
-### Added
-
-- Bento mascot as a `favicon.ico` to docusaurus site and back into the `README`.
-- New cookbook for Kafka topic mirroring.
-- New local testing guide for `bento-lambda`.
-
-### Changed
-
-- Removed more references to upstream in documentation.
-
-### Upstream Changes Synced
-
-- [v4.30.0 - 2024-05-29](./CHANGELOG.old.md#4.30.0-2024-06-13)    
-- [v4.29.0 - 2024-05-29](./CHANGELOG.old.md#4.29.0-2024-06-10)    
-- [v4.28.0 - 2024-05-29](./CHANGELOG.old.md#4.28.0-2024-05-29)    
-
-## 1.0.2 - 2024-06-07
-
-### Changed
-
-- Updated repository documentation.
-
-### Fixed
-
-- Removed referenced to upstream `v4` in favour of Bento `v1`.
-- Fixed flag in Docker `streams_mode` resource.
-
-## 1.0.1 - 2024-06-03
-
-### Changed
-
-Using github's container registry instead of AWS ECR.
-
-## 1.0.0 - 2024-06-03
-
-First release after the fork, pushing binaries to the new github repo and docker images to an AWS ECR.
+```yaml
+logger:
+  level: INFO
+  format: json
+  otel:
+    enabled: true
+    grpc:
+      - address: localhost:4317
+    tags:
+      deployment: prod
+```
+
+## [fork] OTel metrics exporter
+
+Adds an `otel` metrics backend that pushes over OTLP (grpc or http) using the
+OpenTelemetry metrics SDK. That SDK was already a transitive dependency but was
+not wired to anything. Counters map to Int64Counter, gauges to Int64Gauge, and
+timers to a Float64Histogram in seconds, following the OTel convention for
+durations.
+
+```yaml
+metrics:
+  otel:
+    grpc:
+      - address: localhost:4317
+    push_interval: 10s
+```
+
+## [fork] OpenTelemetry dependency alignment
+
+The OTel family is pinned to v1.47.0. The gRPC trace exporter had been left
+behind at v1.40.0. The logs API and SDK reached v1.47.0 in the same release
+train, so logs use stable modules rather than the pre-1.0 ones.
+
+## Phase 2 (planned, not yet implemented): trace instrumentation
+
+Current span coverage is at the input, output, processor, buffer and
+branch/workflow boundaries, plus HTTP client and server. Not yet covered:
+
+- cache and rate_limit component access
+- a root span per stream lifecycle
+- richer per-component span attributes
+- reconciling the parallel `internal/tracing` and `internal/tracing/v2` helper
+  packages
