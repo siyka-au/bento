@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,13 +38,31 @@ func TestReverseAirGapLogger(t *testing.T) {
 	agLogger2.Warnf("foo2: %v", "bar3")
 	agLogger2.Errorf("foo2: %v", "bar4")
 
-	assert.Equal(t, `{"@service":"bento","level":"info","msg":"foo: bar2"}
-{"@service":"bento","field1":"value1","field2":"value2","level":"info","msg":"foo2: bar2"}
-{"@service":"bento","level":"warning","msg":"foo: bar3"}
-{"@service":"bento","level":"error","msg":"foo: bar4"}
-{"@service":"bento","field1":"value1","field2":"value2","level":"warning","msg":"foo2: bar3"}
-{"@service":"bento","field1":"value1","field2":"value2","level":"error","msg":"foo2: bar4"}
-`, buf.String())
+	requireJSONLines(t, []string{
+		`{"@service":"bento","level":"INFO","msg":"foo: bar2"}`,
+		`{"@service":"bento","field1":"value1","field2":"value2","level":"INFO","msg":"foo2: bar2"}`,
+		`{"@service":"bento","level":"WARN","msg":"foo: bar3"}`,
+		`{"@service":"bento","level":"ERROR","msg":"foo: bar4"}`,
+		`{"@service":"bento","field1":"value1","field2":"value2","level":"WARN","msg":"foo2: bar3"}`,
+		`{"@service":"bento","field1":"value1","field2":"value2","level":"ERROR","msg":"foo2: bar4"}`,
+	}, buf.String())
+}
+
+// requireJSONLines asserts that actual is a sequence of newline-delimited
+// JSON objects structurally equal to expected, ignoring key order (slog's
+// handlers, unlike logrus's, don't sort attributes, and map-based WithFields
+// calls add attrs in a non-deterministic order).
+func requireJSONLines(t *testing.T, expected []string, actual string) {
+	t.Helper()
+	actual = strings.TrimRight(actual, "\n")
+	var lines []string
+	if actual != "" {
+		lines = strings.Split(actual, "\n")
+	}
+	require.Len(t, lines, len(expected))
+	for i, exp := range expected {
+		require.JSONEqf(t, exp, lines[i], "line %d", i)
+	}
 }
 
 func TestReverseAirGapLoggerDodgyFields(t *testing.T) {
@@ -62,11 +81,12 @@ func TestReverseAirGapLoggerDodgyFields(t *testing.T) {
 	agLogger.With("field3", 30).Infof("foo3")
 	agLogger.With("field4", "value4").With("field5", "value5").Infof("foo4")
 
-	assert.Equal(t, `{"@service":"bento","field1":"value1","level":"info","msg":"foo1"}
-{"10":"20","@service":"bento","level":"info","msg":"foo2"}
-{"@service":"bento","field3":"30","level":"info","msg":"foo3"}
-{"@service":"bento","field4":"value4","field5":"value5","level":"info","msg":"foo4"}
-`, buf.String())
+	requireJSONLines(t, []string{
+		`{"@service":"bento","field1":"value1","level":"INFO","msg":"foo1"}`,
+		`{"10":"20","@service":"bento","level":"INFO","msg":"foo2"}`,
+		`{"@service":"bento","field3":"30","level":"INFO","msg":"foo3"}`,
+		`{"@service":"bento","field4":"value4","field5":"value5","level":"INFO","msg":"foo4"}`,
+	}, buf.String())
 }
 
 func TestAirGapLogger(t *testing.T) {
@@ -87,11 +107,12 @@ func TestAirGapLogger(t *testing.T) {
 
 	agLogger.With("key", "value").Info("log")
 
-	assert.Equal(t, `{"@service":"bento","level":"error","msg":"foo: bar1"}
-{"@service":"bento","level":"warning","msg":"foo: bar2"}
-{"@service":"bento","level":"info","msg":"foo: bar3"}
-{"@service":"bento","key":"value","level":"info","msg":"log"}
-`, buf.String())
+	requireJSONLines(t, []string{
+		`{"@service":"bento","level":"ERROR","msg":"foo: bar1"}`,
+		`{"@service":"bento","level":"WARN","msg":"foo: bar2"}`,
+		`{"@service":"bento","level":"INFO","msg":"foo: bar3"}`,
+		`{"@service":"bento","key":"value","level":"INFO","msg":"log"}`,
+	}, buf.String())
 }
 
 func TestAirGapSlogLogger(t *testing.T) {
@@ -141,14 +162,15 @@ func TestAirGapLoggerChaining(t *testing.T) {
 	chain1.Info("from chain 1")
 	chain2.Info("from chain 2")
 
-	assert.Equal(t, `{"@service":"bento","level":"info","msg":"with fields","service":"test","version":"1.0"}
-{"@service":"bento","key1":"value1","key2":"value2","level":"info","msg":"with context"}
-{"@service":"bento","level":"info","msg":"chained","request_id":"123","service":"api"}
-{"@service":"bento","env":"prod","level":"info","msg":"multiple withfields","service":"api","version":"1.0"}
-{"@service":"bento","action":"login","level":"info","msg":"multiple with","request_id":"123","user_id":"456"}
-{"@service":"bento","chain":"1","level":"info","msg":"from chain 1"}
-{"@service":"bento","chain":"2","level":"info","msg":"from chain 2"}
-`, buf.String())
+	requireJSONLines(t, []string{
+		`{"@service":"bento","level":"INFO","msg":"with fields","service":"test","version":"1.0"}`,
+		`{"@service":"bento","key1":"value1","key2":"value2","level":"INFO","msg":"with context"}`,
+		`{"@service":"bento","level":"INFO","msg":"chained","request_id":"123","service":"api"}`,
+		`{"@service":"bento","env":"prod","level":"INFO","msg":"multiple withfields","service":"api","version":"1.0"}`,
+		`{"@service":"bento","action":"login","level":"INFO","msg":"multiple with","request_id":"123","user_id":"456"}`,
+		`{"@service":"bento","chain":"1","level":"INFO","msg":"from chain 1"}`,
+		`{"@service":"bento","chain":"2","level":"INFO","msg":"from chain 2"}`,
+	}, buf.String())
 }
 
 func TestAirGapLoggerTrace(t *testing.T) {
@@ -164,7 +186,7 @@ func TestAirGapLoggerTrace(t *testing.T) {
 	agLogger := newAirGapLogger(logger)
 	agLogger.Trace("trace message: %s", "test")
 
-	assert.Equal(t, `{"@service":"bento","level":"trace","msg":"trace message: test"}
+	require.JSONEq(t, `{"@service":"bento","level":"TRACE","msg":"trace message: test"}
 `, buf.String())
 }
 

@@ -1,8 +1,7 @@
-//go:build go1.21
-
 package log
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -34,7 +33,7 @@ func (l *logHandler) With(keyValues ...any) Modular {
 }
 
 func (l *logHandler) Fatal(format string, v ...any) {
-	l.slog.Error(fmt.Sprintf(format, v...))
+	l.slog.Log(context.Background(), LevelFatal, fmt.Sprintf(format, v...))
 	os.Exit(1)
 }
 
@@ -55,7 +54,7 @@ func (l *logHandler) Debug(format string, v ...any) {
 }
 
 func (l *logHandler) Trace(format string, v ...any) {
-	l.slog.Debug(fmt.Sprintf(format, v...))
+	l.slog.Log(context.Background(), LevelTrace, fmt.Sprintf(format, v...))
 }
 
 func (l *logHandler) clone() *logHandler {

@@ -110,7 +110,7 @@ noop: {}
 	require.NotEmpty(t, logger.fields)
 	require.NotEmpty(t, logger.mappingFields)
 
-	require.Equal(t, "{\"@service\":\"bento\",\"level\":\"error\",\"msg\":\"failed processing\"}", logger.errors[0])
+	require.JSONEq(t, "{\"@service\":\"bento\",\"level\":\"ERROR\",\"msg\":\"failed processing\"}", logger.errors[0])
 	require.Equal(t, map[string]string{"label": ""}, logger.fields[0])
 	require.Equal(t, map[string]string{"path": "root.noop"}, logger.fields[1])
 	require.Equal(t, map[string]string{"error": "foo", "raw_payload": "error message"}, logger.fields[2])
@@ -133,9 +133,9 @@ noop: {}
 	require.Len(t, msgs[0], 4)
 	require.NoError(t, res)
 
-	require.Equal(t, "{\"@service\":\"bento\",\"level\":\"error\",\"msg\":\"failed processing\"}", logger.errors[1])
+	require.JSONEq(t, "{\"@service\":\"bento\",\"level\":\"ERROR\",\"msg\":\"failed processing\"}", logger.errors[1])
 	require.Equal(t, map[string]string{"error": "foo", "raw_payload": "error message"}, logger.fields[3])
 
-	require.Equal(t, "{\"@service\":\"bento\",\"level\":\"error\",\"msg\":\"failed processing\"}", logger.errors[2])
+	require.JSONEq(t, "{\"@service\":\"bento\",\"level\":\"ERROR\",\"msg\":\"failed processing\"}", logger.errors[2])
 	require.Equal(t, map[string]string{"error": "foo", "raw_payload": "another error message"}, logger.fields[4])
 }

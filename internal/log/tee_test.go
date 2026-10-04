@@ -2,6 +2,7 @@ package log
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -52,18 +53,35 @@ func TestLoggerTee(t *testing.T) {
 	logger.Warn("Warning message root module\n")
 	logger.Debug("Debug message root again")
 
-	expectedA := `level=warning msg="Warning message root module" @service=bento_service @system=foo
-level=warning msg="Warning message foo fields" @service=bento_service @system=foo count=10 foo=bar iscool=true thing="is a string"
-level=warning msg="Warning message root module" @service=bento_service @system=foo
-`
-	assert.Equal(t, expectedA, bufA.String())
+	// WithFields takes a map, so the order of the extra fields it adds is
+	// not guaranteed; assert line-by-line and check extra fields via Contains.
+	linesA := strings.Split(strings.TrimRight(bufA.String(), "\n"), "\n")
+	require.Len(t, linesA, 3)
+	assert.Equal(t, `level=WARN msg="Warning message root module" @service=bento_service @system=foo`, linesA[0])
+	for _, exp := range []string{
+		`level=WARN msg="Warning message foo fields" @service=bento_service @system=foo`,
+		"count=10", "foo=bar", "iscool=true", `thing="is a string"`,
+	} {
+		assert.Contains(t, linesA[1], exp)
+	}
+	assert.Equal(t, `level=WARN msg="Warning message root module\n" @service=bento_service @system=foo`, linesA[2])
 
-	expectedB := `level=warning msg="Warning message root module" @service=bento_service @system=bar
-level=debug msg="Debug log root module" @service=bento_service @system=bar
-level=debug msg="Debug log foo fields" @service=bento_service @system=bar count=10 foo=bar iscool=true thing="is a string"
-level=warning msg="Warning message foo fields" @service=bento_service @system=bar count=10 foo=bar iscool=true thing="is a string"
-level=warning msg="Warning message root module" @service=bento_service @system=bar
-level=debug msg="Debug message root again" @service=bento_service @system=bar
-`
-	assert.Equal(t, expectedB, bufB.String())
+	linesB := strings.Split(strings.TrimRight(bufB.String(), "\n"), "\n")
+	require.Len(t, linesB, 6)
+	assert.Equal(t, `level=WARN msg="Warning message root module" @service=bento_service @system=bar`, linesB[0])
+	assert.Equal(t, `level=DEBUG msg="Debug log root module" @service=bento_service @system=bar`, linesB[1])
+	for _, exp := range []string{
+		`level=DEBUG msg="Debug log foo fields" @service=bento_service @system=bar`,
+		"count=10", "foo=bar", "iscool=true", `thing="is a string"`,
+	} {
+		assert.Contains(t, linesB[2], exp)
+	}
+	for _, exp := range []string{
+		`level=WARN msg="Warning message foo fields" @service=bento_service @system=bar`,
+		"count=10", "foo=bar", "iscool=true", `thing="is a string"`,
+	} {
+		assert.Contains(t, linesB[3], exp)
+	}
+	assert.Equal(t, `level=WARN msg="Warning message root module\n" @service=bento_service @system=bar`, linesB[4])
+	assert.Equal(t, `level=DEBUG msg="Debug message root again" @service=bento_service @system=bar`, linesB[5])
 }

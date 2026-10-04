@@ -69,7 +69,7 @@ func TestProcessorWrapWithErrorLogger(t *testing.T) {
 	logLines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 	require.Len(t, logLines, 1)
 
-	require.Contains(t, logLines, "{\"@service\":\"bento\",\"error\":\"invalid character 'o' in literal null (expecting 'u')\",\"level\":\"error\",\"msg\":\"failed processing\",\"raw_payload\":\"not a structured doc\"}")
+	require.JSONEq(t, "{\"@service\":\"bento\",\"error\":\"invalid character 'o' in literal null (expecting 'u')\",\"level\":\"ERROR\",\"msg\":\"failed processing\",\"raw_payload\":\"not a structured doc\"}", logLines[0])
 
 	buf.Reset()
 
@@ -86,6 +86,6 @@ func TestProcessorWrapWithErrorLogger(t *testing.T) {
 	logLines = strings.Split(strings.TrimSpace(buf.String()), "\n")
 	require.Len(t, logLines, 2)
 
-	require.Equal(t, "{\"@service\":\"bento\",\"error\":\"invalid character 'o' in literal null (expecting 'u')\",\"level\":\"error\",\"msg\":\"failed processing\",\"raw_payload\":\"not a structured doc\"}", logLines[0])
-	require.Equal(t, "{\"@service\":\"bento\",\"error\":\"invalid character 'a' looking for beginning of value\",\"level\":\"error\",\"msg\":\"failed processing\",\"raw_payload\":\"another unstructured doc\"}", logLines[1])
+	require.JSONEq(t, "{\"@service\":\"bento\",\"error\":\"invalid character 'o' in literal null (expecting 'u')\",\"level\":\"ERROR\",\"msg\":\"failed processing\",\"raw_payload\":\"not a structured doc\"}", logLines[0])
+	require.JSONEq(t, "{\"@service\":\"bento\",\"error\":\"invalid character 'a' looking for beginning of value\",\"level\":\"ERROR\",\"msg\":\"failed processing\",\"raw_payload\":\"another unstructured doc\"}", logLines[1])
 }
