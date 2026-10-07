@@ -16,7 +16,7 @@ func newTestMetrics(t *testing.T) (*otelMetrics, *sdkmetric.ManualReader) {
 	reader := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
-	return &otelMetrics{provider: provider, meter: provider.Meter("bento")}, reader
+	return &otelMetrics{core: newMetricsCore(provider)}, reader
 }
 
 func collect(t *testing.T, reader *sdkmetric.ManualReader) map[string]metricdata.Metrics {

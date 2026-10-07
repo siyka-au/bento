@@ -3,6 +3,8 @@ package otel
 import (
 	"context"
 	"errors"
+	"net/http"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -13,8 +15,14 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 
+	"github.com/warpstreamlabs/bento/internal/component/metrics"
 	"github.com/warpstreamlabs/bento/public/service"
 )
+
+// closeTimeout bounds shutdown of the OTel meter provider when the caller
+// gives us no context of their own to work with (metrics.Type.Close takes
+// none).
+const closeTimeout = 10 * time.Second
 
 func metricsSpec() *service.ConfigSpec {
 	return service.NewConfigSpec().
@@ -145,19 +153,24 @@ func newOtelMetricsFromParsed(conf *service.ParsedConfig) (service.MetricsExport
 	}
 	provider := sdkmetric.NewMeterProvider(opts...)
 
-	return &otelMetrics{
-		provider: provider,
-		meter:    provider.Meter("bento"),
-	}, nil
+	return &otelMetrics{core: newMetricsCore(provider)}, nil
 }
 
-// otelMetrics adapts bento's metrics model to OpenTelemetry. OTel instruments
-// are created once per metric name, and label values are bound as attributes
-// at record time. This differs from the prometheus backend, which creates one
-// vector per name and then one child per label combination.
-type otelMetrics struct {
+// metricsCore adapts bento's internal metrics.Type model to OpenTelemetry,
+// and is shared by the "otel" push metrics exporter (public plugin API,
+// below) and the "resource" metrics type (internal/impl/otel/metrics_resource.go),
+// which exports to a named telemetry_resources entry instead of its own
+// collector config. OTel instruments are created once per metric name, and
+// label values are bound as attributes at record time. This differs from the
+// prometheus backend, which creates one vector per name and then one child
+// per label combination.
+type metricsCore struct {
 	provider *sdkmetric.MeterProvider
 	meter    metric.Meter
+}
+
+func newMetricsCore(provider *sdkmetric.MeterProvider) *metricsCore {
+	return &metricsCore{provider: provider, meter: provider.Meter("bento")}
 }
 
 func labelAttributes(keys, values []string) []attribute.KeyValue {
@@ -169,41 +182,118 @@ func labelAttributes(keys, values []string) []attribute.KeyValue {
 	return attrs
 }
 
-func (o *otelMetrics) NewCounterCtor(name string, labelKeys ...string) service.MetricsExporterCounterCtor {
+func (o *metricsCore) GetCounter(path string) metrics.StatCounter {
+	return o.GetCounterVec(path).With()
+}
+
+func (o *metricsCore) GetCounterVec(path string, labelNames ...string) metrics.StatCounterVec {
 	// OTel returns a no-op instrument alongside any creation error, which is an
-	// acceptable degradation since the MetricsExporter interface has no error path.
-	counter, _ := o.meter.Int64Counter(name)
+	// acceptable degradation since metrics.Type has no error path either.
+	counter, _ := o.meter.Int64Counter(path)
+	return &otelCounterVec{counter: counter, labelKeys: labelNames}
+}
+
+func (o *metricsCore) GetTimer(path string) metrics.StatTimer {
+	return o.GetTimerVec(path).With()
+}
+
+func (o *metricsCore) GetTimerVec(path string, labelNames ...string) metrics.StatTimerVec {
+	timer, _ := o.meter.Float64Histogram(path, metric.WithUnit("s"))
+	return &otelTimerVec{timer: timer, labelKeys: labelNames}
+}
+
+func (o *metricsCore) GetGauge(path string) metrics.StatGauge {
+	return o.GetGaugeVec(path).With()
+}
+
+func (o *metricsCore) GetGaugeVec(path string, labelNames ...string) metrics.StatGaugeVec {
+	gauge, _ := o.meter.Int64Gauge(path)
+	return &otelGaugeVec{gauge: gauge, labelKeys: labelNames}
+}
+
+// HandlerFunc returns nil, as OTel metrics are pushed to a collector rather
+// than scraped over HTTP.
+func (o *metricsCore) HandlerFunc() http.HandlerFunc {
+	return nil
+}
+
+func (o *metricsCore) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), closeTimeout)
+	defer cancel()
+	return o.provider.Shutdown(ctx)
+}
+
+// otelMetrics adapts metricsCore to the public service.MetricsExporter
+// plugin interface used by the "otel" push metrics exporter registered
+// above.
+type otelMetrics struct {
+	core *metricsCore
+}
+
+func (o *otelMetrics) NewCounterCtor(name string, labelKeys ...string) service.MetricsExporterCounterCtor {
+	cv := o.core.GetCounterVec(name, labelKeys...)
 	return func(labelValues ...string) service.MetricsExporterCounter {
-		return &otelCounter{
-			counter: counter,
-			opts:    []metric.AddOption{metric.WithAttributes(labelAttributes(labelKeys, labelValues)...)},
-		}
+		return cv.With(labelValues...)
 	}
 }
 
 func (o *otelMetrics) NewTimerCtor(name string, labelKeys ...string) service.MetricsExporterTimerCtor {
-	timer, _ := o.meter.Float64Histogram(name, metric.WithUnit("s"))
+	tv := o.core.GetTimerVec(name, labelKeys...)
 	return func(labelValues ...string) service.MetricsExporterTimer {
-		return &otelTimer{
-			timer: timer,
-			opts:  []metric.RecordOption{metric.WithAttributes(labelAttributes(labelKeys, labelValues)...)},
-		}
+		return tv.With(labelValues...)
 	}
 }
 
 func (o *otelMetrics) NewGaugeCtor(name string, labelKeys ...string) service.MetricsExporterGaugeCtor {
-	gauge, _ := o.meter.Int64Gauge(name)
+	gv := o.core.GetGaugeVec(name, labelKeys...)
 	return func(labelValues ...string) service.MetricsExporterGauge {
-		return &otelGauge{
-			gauge: gauge,
-			opts:  []metric.RecordOption{metric.WithAttributes(labelAttributes(labelKeys, labelValues)...)},
-		}
+		return gv.With(labelValues...)
 	}
 }
 
 func (o *otelMetrics) Close(ctx context.Context) error {
-	return o.provider.Shutdown(ctx)
+	return o.core.provider.Shutdown(ctx)
 }
+
+//------------------------------------------------------------------------------
+
+type otelCounterVec struct {
+	counter   metric.Int64Counter
+	labelKeys []string
+}
+
+func (v *otelCounterVec) With(labelValues ...string) metrics.StatCounter {
+	return &otelCounter{
+		counter: v.counter,
+		opts:    []metric.AddOption{metric.WithAttributes(labelAttributes(v.labelKeys, labelValues)...)},
+	}
+}
+
+type otelTimerVec struct {
+	timer     metric.Float64Histogram
+	labelKeys []string
+}
+
+func (v *otelTimerVec) With(labelValues ...string) metrics.StatTimer {
+	return &otelTimer{
+		timer: v.timer,
+		opts:  []metric.RecordOption{metric.WithAttributes(labelAttributes(v.labelKeys, labelValues)...)},
+	}
+}
+
+type otelGaugeVec struct {
+	gauge     metric.Int64Gauge
+	labelKeys []string
+}
+
+func (v *otelGaugeVec) With(labelValues ...string) metrics.StatGauge {
+	return &otelGauge{
+		gauge: v.gauge,
+		opts:  []metric.RecordOption{metric.WithAttributes(labelAttributes(v.labelKeys, labelValues)...)},
+	}
+}
+
+//------------------------------------------------------------------------------
 
 type otelCounter struct {
 	counter metric.Int64Counter
@@ -212,6 +302,13 @@ type otelCounter struct {
 
 func (c *otelCounter) Incr(count int64) {
 	c.counter.Add(context.Background(), count, c.opts...)
+}
+
+// IncrFloat64 truncates to an integer amount, since the underlying instrument
+// is an Int64Counter (mirroring the fallback behaviour of airGapCounter in
+// public/service/metrics.go for exporters that don't support float deltas).
+func (c *otelCounter) IncrFloat64(count float64) {
+	c.Incr(int64(count))
 }
 
 type otelTimer struct {
@@ -228,8 +325,32 @@ func (t *otelTimer) Timing(deltaNs int64) {
 type otelGauge struct {
 	gauge metric.Int64Gauge
 	opts  []metric.RecordOption
+	// v tracks the current value so that Incr/Decr can be applied on top of
+	// it, since Int64Gauge only exposes an absolute Record.
+	v atomic.Int64
 }
 
 func (g *otelGauge) Set(value int64) {
+	g.v.Store(value)
 	g.gauge.Record(context.Background(), value, g.opts...)
+}
+
+func (g *otelGauge) Incr(count int64) {
+	g.Set(g.v.Add(count))
+}
+
+func (g *otelGauge) Decr(count int64) {
+	g.Set(g.v.Add(-count))
+}
+
+func (g *otelGauge) SetFloat64(value float64) {
+	g.Set(int64(value))
+}
+
+func (g *otelGauge) IncrFloat64(count float64) {
+	g.Incr(int64(count))
+}
+
+func (g *otelGauge) DecrFloat64(count float64) {
+	g.Decr(int64(count))
 }
