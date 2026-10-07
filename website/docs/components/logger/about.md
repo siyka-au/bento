@@ -147,3 +147,11 @@ Type: `bool`
 Default: `false`  
 Requires version 1.4.0 or newer  
 
+### `telemetry`
+
+Experimental: The label of a telemetry resource, defined in `telemetry_resources`, to also export every log record to, in addition to the output configured above. Records honour `level`.
+
+
+Type: `string`  
+Default: `""`  
+
