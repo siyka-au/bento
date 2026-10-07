@@ -15,6 +15,7 @@ import (
 	"github.com/warpstreamlabs/bento/internal/manager"
 	"github.com/warpstreamlabs/bento/internal/stream"
 	strmmgr "github.com/warpstreamlabs/bento/internal/stream/manager"
+	"github.com/warpstreamlabs/bento/internal/telemetry"
 
 	"github.com/urfave/cli/v2"
 )
@@ -33,7 +34,13 @@ func RunService(c *cli.Context, cliOpts *CLIOpts, streamsMode bool) int {
 		_ = confReader.Close(c.Context)
 	}()
 
-	logger, err := CreateLogger(c, cliOpts, conf, streamsMode)
+	reg, err := telemetry.NewRegistry(conf.ResourceConfig.ResourceTelemetry, cliOpts.Version)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Telemetry resource error: %v\n", err)
+		return 1
+	}
+
+	logger, err := CreateLogger(c, cliOpts, conf, streamsMode, reg)
 	if err != nil {
 		fmt.Printf("Failed to create logger: %v\n", err)
 		return 1
@@ -76,7 +83,7 @@ func RunService(c *cli.Context, cliOpts *CLIOpts, streamsMode bool) int {
 		logger.With("lint", lintWarn).Warn("Config lint warning")
 	}
 
-	stoppableManager, err := CreateManager(c, cliOpts, logger, streamsMode, conf)
+	stoppableManager, err := CreateManager(c, cliOpts, logger, streamsMode, conf, reg)
 	if err != nil {
 		logger.Error("%s", err.Error())
 		return 1

@@ -24,6 +24,7 @@ import (
 	"github.com/warpstreamlabs/bento/internal/log"
 	"github.com/warpstreamlabs/bento/internal/manager"
 	"github.com/warpstreamlabs/bento/internal/manager/mock"
+	"github.com/warpstreamlabs/bento/internal/telemetry"
 )
 
 // CreateManager from a CLI context and a stream config.
@@ -33,6 +34,7 @@ func CreateManager(
 	logger log.Modular,
 	streamsMode bool,
 	conf config.Type,
+	reg *telemetry.Registry,
 	mgrOpts ...manager.OptFunc,
 ) (stoppableMgr *StoppableManager, err error) {
 	var stats *metrics.Namespaced
@@ -60,6 +62,7 @@ func CreateManager(
 	tmpMgr := mock.NewManager()
 	tmpMgr.L = logger
 	tmpMgr.Version = cliOpts.Version
+	tmpMgr.SetGeneric(telemetry.ManagerKey, reg)
 
 	// Create our metrics type.
 	if stats, err = bundle.AllMetrics.Init(conf.Metrics, tmpMgr); err != nil {

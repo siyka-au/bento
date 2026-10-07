@@ -19,6 +19,7 @@ import (
 	"github.com/warpstreamlabs/bento/internal/manager"
 	"github.com/warpstreamlabs/bento/internal/manager/mock"
 	"github.com/warpstreamlabs/bento/internal/message"
+	"github.com/warpstreamlabs/bento/internal/telemetry"
 	"github.com/warpstreamlabs/bento/internal/transaction"
 )
 
@@ -102,8 +103,14 @@ func (h *Handler) Handle(ctx context.Context, obj any) (any, error) {
 
 // NewHandler returns a Handler by creating a Bento pipeline.
 func NewHandler(conf config.Type) (*Handler, error) {
+	// No engine version is available in this context.
+	reg, err := telemetry.NewRegistry(conf.ResourceConfig.ResourceTelemetry, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialise telemetry resources: %v", err)
+	}
+
 	// Logging and stats aggregation.
-	logger, err := log.New(os.Stdout, ifs.OS(), conf.Logger)
+	logger, err := log.New(os.Stdout, ifs.OS(), conf.Logger, log.OptTelemetry(reg))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create logger: %v", err)
 	}
@@ -114,6 +121,7 @@ func NewHandler(conf config.Type) (*Handler, error) {
 	// to revise in future.
 	tmpMgr := mock.NewManager()
 	tmpMgr.L = logger
+	tmpMgr.SetGeneric(telemetry.ManagerKey, reg)
 
 	// Create our metrics type.
 	var stats *metrics.Namespaced
