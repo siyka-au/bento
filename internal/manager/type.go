@@ -273,6 +273,14 @@ func New(conf ResourceConfig, opts ...OptFunc) (*Type, error) {
 		}
 		t.rateLimits.Add(c.Label, nil)
 	}
+	// Telemetry resources aren't constructed by the manager (a later CLI
+	// bootstrap step builds the registry), so just validate their labels
+	// here to keep the shared label namespace consistent.
+	for _, c := range conf.ResourceTelemetry {
+		if err := checkLabel("telemetry", c.Label); err != nil {
+			return nil, err
+		}
+	}
 
 	// Labels validated, begin construction
 	for _, conf := range conf.ResourceRateLimits {

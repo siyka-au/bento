@@ -8,6 +8,7 @@ import (
 
 	"github.com/warpstreamlabs/bento/internal/component/testutil"
 	"github.com/warpstreamlabs/bento/internal/manager"
+	"github.com/warpstreamlabs/bento/internal/telemetry"
 )
 
 func TestConfigParseYAML(t *testing.T) {
@@ -42,6 +43,16 @@ rate_limit_resources:
     local:
       count: 123
       interval: 100ms
+telemetry_resources:
+  - label: f
+    open_telemetry_collector:
+      grpc:
+        - address: collector:4317
+  - label: g
+    open_telemetry_collector:
+      http:
+        - address: collector:4318
+          secure: true
 `,
 			validateFn: func(t testing.TB, v manager.ResourceConfig) {
 				require.Len(t, v.ResourceCaches, 1)
@@ -49,6 +60,7 @@ rate_limit_resources:
 				require.Len(t, v.ResourceInputs, 1)
 				require.Len(t, v.ResourceOutputs, 1)
 				require.Len(t, v.ResourceProcessors, 1)
+				require.Len(t, v.ResourceTelemetry, 2)
 
 				assert.Equal(t, "a", v.ResourceInputs[0].Label)
 				assert.Equal(t, "generate", v.ResourceInputs[0].Type)
@@ -64,6 +76,13 @@ rate_limit_resources:
 
 				assert.Equal(t, "e", v.ResourceRateLimits[0].Label)
 				assert.Equal(t, "local", v.ResourceRateLimits[0].Type)
+
+				assert.Equal(t, "f", v.ResourceTelemetry[0].Label)
+				assert.Equal(t, "collector:4317", v.ResourceTelemetry[0].OpenTelemetryCollector.GRPC[0].Address)
+
+				assert.Equal(t, "g", v.ResourceTelemetry[1].Label)
+				assert.Equal(t, "collector:4318", v.ResourceTelemetry[1].OpenTelemetryCollector.HTTP[0].Address)
+				assert.True(t, v.ResourceTelemetry[1].OpenTelemetryCollector.HTTP[0].Secure)
 			},
 		},
 	}
@@ -80,4 +99,30 @@ rate_limit_resources:
 			}
 		})
 	}
+}
+
+func TestConfigParseYAMLTelemetryAbsent(t *testing.T) {
+	conf, err := testutil.ManagerFromYAML(`
+input_resources:
+  - label: a
+    generate:
+      count: 1
+      mapping: 'root.id = "a"'
+      interval: 1s
+`)
+	require.NoError(t, err)
+	assert.Empty(t, conf.ResourceTelemetry)
+}
+
+func TestConfigAddFromMergesTelemetry(t *testing.T) {
+	conf := manager.NewResourceConfig()
+	conf.ResourceTelemetry = append(conf.ResourceTelemetry, telemetry.Config{Label: "foo"})
+
+	extra := manager.NewResourceConfig()
+	extra.ResourceTelemetry = append(extra.ResourceTelemetry, telemetry.Config{Label: "bar"})
+
+	require.NoError(t, conf.AddFrom(&extra))
+	require.Len(t, conf.ResourceTelemetry, 2)
+	assert.Equal(t, "foo", conf.ResourceTelemetry[0].Label)
+	assert.Equal(t, "bar", conf.ResourceTelemetry[1].Label)
 }

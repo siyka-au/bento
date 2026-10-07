@@ -6,6 +6,7 @@ import (
 	"github.com/Jeffail/gabs/v2"
 
 	"github.com/warpstreamlabs/bento/internal/docs"
+	"github.com/warpstreamlabs/bento/internal/telemetry"
 )
 
 func lintResource(ctx docs.LintContext, line, col int, v any) []docs.Lint {
@@ -44,5 +45,9 @@ func Spec() docs.FieldSpecs {
 		docs.FieldRateLimit(
 			"rate_limit_resources", "A list of rate limit resources, each must have a unique label.",
 		).Array().LinterFunc(lintResource).HasDefault([]any{}).Advanced(),
+
+		docs.FieldObject(
+			"telemetry_resources", "A list of telemetry resources (named OpenTelemetry collectors) that the logger, metrics and tracer can reference by label; fixed at startup.",
+		).WithChildren(telemetry.FieldSpecs()...).Array().LinterFunc(lintResource).HasDefault([]any{}).Advanced(),
 	}
 }

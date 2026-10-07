@@ -7,6 +7,7 @@ import (
 	"github.com/warpstreamlabs/bento/internal/component/processor"
 	"github.com/warpstreamlabs/bento/internal/component/ratelimit"
 	"github.com/warpstreamlabs/bento/internal/docs"
+	"github.com/warpstreamlabs/bento/internal/telemetry"
 )
 
 const (
@@ -15,6 +16,7 @@ const (
 	fieldResourceOutputs    = "output_resources"
 	fieldResourceCaches     = "cache_resources"
 	fieldResourceRateLimits = "rate_limit_resources"
+	fieldResourceTelemetry  = "telemetry_resources"
 )
 
 // ResourceConfig contains fields for specifying resource components at the root
@@ -25,6 +27,7 @@ type ResourceConfig struct {
 	ResourceOutputs    []output.Config    `yaml:"output_resources,omitempty"`
 	ResourceCaches     []cache.Config     `yaml:"cache_resources,omitempty"`
 	ResourceRateLimits []ratelimit.Config `yaml:"rate_limit_resources,omitempty"`
+	ResourceTelemetry  []telemetry.Config `yaml:"telemetry_resources,omitempty"`
 }
 
 // NewResourceConfig creates a ResourceConfig with default values.
@@ -35,6 +38,7 @@ func NewResourceConfig() ResourceConfig {
 		ResourceOutputs:    []output.Config{},
 		ResourceCaches:     []cache.Config{},
 		ResourceRateLimits: []ratelimit.Config{},
+		ResourceTelemetry:  []telemetry.Config{},
 	}
 }
 
@@ -46,6 +50,7 @@ func (r *ResourceConfig) AddFrom(extra *ResourceConfig) error {
 	r.ResourceOutputs = append(r.ResourceOutputs, extra.ResourceOutputs...)
 	r.ResourceCaches = append(r.ResourceCaches, extra.ResourceCaches...)
 	r.ResourceRateLimits = append(r.ResourceRateLimits, extra.ResourceRateLimits...)
+	r.ResourceTelemetry = append(r.ResourceTelemetry, extra.ResourceTelemetry...)
 	return nil
 }
 
@@ -131,6 +136,18 @@ func FromParsed(prov docs.Provider, pConf *docs.ParsedConfig) (conf ResourceConf
 			return
 		}
 		conf.ResourceRateLimits = append(conf.ResourceRateLimits, c)
+	}
+
+	var tList []*docs.ParsedConfig
+	if tList, err = pConf.FieldObjectList(fieldResourceTelemetry); err != nil {
+		return
+	}
+	for _, p := range tList {
+		var c telemetry.Config
+		if c, err = telemetry.FromParsed(p); err != nil {
+			return
+		}
+		conf.ResourceTelemetry = append(conf.ResourceTelemetry, c)
 	}
 	return
 }

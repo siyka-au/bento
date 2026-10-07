@@ -19,6 +19,7 @@ import (
 	"github.com/warpstreamlabs/bento/internal/docs"
 	"github.com/warpstreamlabs/bento/internal/manager"
 	"github.com/warpstreamlabs/bento/internal/message"
+	"github.com/warpstreamlabs/bento/internal/telemetry"
 
 	_ "github.com/warpstreamlabs/bento/public/components/pure"
 )
@@ -206,6 +207,24 @@ func TestManagerCacheListErrors(t *testing.T) {
 
 	_, err = manager.New(conf)
 	require.EqualError(t, err, "cache resource has an empty label")
+}
+
+func TestManagerTelemetryLabelErrors(t *testing.T) {
+	cFoo := cache.NewConfig()
+	cFoo.Label = "foo"
+
+	conf := manager.NewResourceConfig()
+	conf.ResourceCaches = append(conf.ResourceCaches, cFoo)
+	conf.ResourceTelemetry = append(conf.ResourceTelemetry, telemetry.Config{Label: "foo"})
+
+	_, err := manager.New(conf)
+	require.EqualError(t, err, "telemetry resource label 'foo' collides with a previously defined resource")
+
+	conf = manager.NewResourceConfig()
+	conf.ResourceTelemetry = append(conf.ResourceTelemetry, telemetry.Config{Label: ""})
+
+	_, err = manager.New(conf)
+	require.EqualError(t, err, "telemetry resource has an empty label")
 }
 
 func TestManagerBadCache(t *testing.T) {
