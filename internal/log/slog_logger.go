@@ -9,14 +9,38 @@ import (
 	"os"
 	"sort"
 
+	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/warpstreamlabs/bento/internal/filepath/ifs"
+	"github.com/warpstreamlabs/bento/internal/telemetry"
 )
+
+// newOpts holds the options configured via NewOpt funcs passed to New.
+type newOpts struct {
+	telemetryReg *telemetry.Registry
+}
+
+// NewOpt is an optional argument to New.
+type NewOpt func(*newOpts)
+
+// OptTelemetry provides the telemetry resource registry New resolves
+// config.Telemetry against. Without it, a non-empty config.Telemetry is an
+// error.
+func OptTelemetry(reg *telemetry.Registry) NewOpt {
+	return func(o *newOpts) {
+		o.telemetryReg = reg
+	}
+}
 
 // New returns a new logger from a config, or returns an error if the config
 // is invalid.
-func New(stream io.Writer, fs ifs.FS, config Config) (Modular, error) {
+func New(stream io.Writer, fs ifs.FS, config Config, opts ...NewOpt) (Modular, error) {
+	var o newOpts
+	for _, opt := range opts {
+		opt(&o)
+	}
+
 	if config.File.Path != "" {
 		if config.File.Rotate {
 			stream = &lumberjack.Logger{
@@ -40,7 +64,7 @@ func New(stream io.Writer, fs ifs.FS, config Config) (Modular, error) {
 		}
 	}
 
-	opts := &slog.HandlerOptions{
+	hOpts := &slog.HandlerOptions{
 		Level:       parseLevel(config.LogLevel),
 		ReplaceAttr: config.replaceAttr,
 	}
@@ -48,23 +72,28 @@ func New(stream io.Writer, fs ifs.FS, config Config) (Modular, error) {
 	var handler slog.Handler
 	switch config.Format {
 	case "json":
-		handler = slog.NewJSONHandler(stream, opts)
+		handler = slog.NewJSONHandler(stream, hOpts)
 	case "logfmt":
-		handler = slog.NewTextHandler(stream, opts)
+		handler = slog.NewTextHandler(stream, hOpts)
 	default:
 		return nil, fmt.Errorf("log format '%v' not recognized", config.Format)
 	}
 
-	var otelShutdown func(context.Context) error
-	if config.Otel.Enabled {
-		otelHandler, shutdown, err := newOtelHandler(config.Otel)
+	var telemetryShutdown func(context.Context) error
+	if config.Telemetry != "" {
+		res, err := o.telemetryReg.Get(config.Telemetry)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("logger telemetry: %w", err)
 		}
-		otelShutdown = shutdown
+		provider, err := res.LoggerProvider(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("logger telemetry: %w", err)
+		}
+		telemetryShutdown = provider.Shutdown
+		telemetryHandler := otelslog.NewHandler("bento", otelslog.WithLoggerProvider(provider))
 		handler = &multiHandler{
 			level:    parseLevel(config.LogLevel),
-			handlers: []slog.Handler{handler, otelHandler},
+			handlers: []slog.Handler{handler, telemetryHandler},
 		}
 	}
 
@@ -84,7 +113,7 @@ func New(stream io.Writer, fs ifs.FS, config Config) (Modular, error) {
 	}
 
 	adapter := NewBentoLogAdapter(logger)
-	adapter.shutdown = otelShutdown
+	adapter.shutdown = telemetryShutdown
 	return adapter, nil
 }
 

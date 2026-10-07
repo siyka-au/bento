@@ -29,18 +29,7 @@ func Spec() docs.FieldSpecs {
 			docs.FieldInt(fieldFileRotateMaxAge, "The maximum number of days to retain old log files based on the timestamp encoded in their filename, after which they are deleted. Setting to zero disables this mechanism.").HasDefault(0),
 		),
 		docs.FieldBool(fieldLogAllErrors, "Experimental: When set, the logger will promote any log containing an `error` type to the `ERROR` level.").HasDefault(false).Advanced().AtVersion("1.4.0"),
-		docs.FieldObject(fieldOtel, "Experimental: Export logs to an [Open Telemetry collector](https://opentelemetry.io/docs/collector/) via OTLP, in addition to the primary output above.").WithChildren(
-			docs.FieldBool(fieldOtelEnabled, "Whether to export logs via OTLP.").HasDefault(false),
-			docs.FieldObject(fieldOtelGRPC, "A collector to send logs to.").WithChildren(
-				docs.FieldString(fieldOtelAddress, "The endpoint of a collector to send logs to.", "localhost:4317"),
-				docs.FieldBool(fieldOtelSecure, "Connect to the collector with client transport security.").HasDefault(false),
-			).Array().HasDefault([]any{}),
-			docs.FieldObject(fieldOtelHTTP, "A collector to send logs to.").WithChildren(
-				docs.FieldString(fieldOtelAddress, "The endpoint of a collector to send logs to.", "localhost:4318"),
-				docs.FieldBool(fieldOtelSecure, "Connect to the collector over HTTPS.").HasDefault(false),
-			).Array().HasDefault([]any{}),
-			docs.FieldString(fieldOtelTags, "A map of tags to add to all exported log records.").Map().HasDefault(map[string]any{}),
-		).Advanced(),
+		docs.FieldString(fieldTelemetry, "Experimental: The label of a telemetry resource, defined in `telemetry_resources`, to also export every log record to, in addition to the output configured above. Records honour `level`.").HasDefault("").Advanced(),
 	}
 }
 
