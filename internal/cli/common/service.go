@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/warpstreamlabs/bento/internal/config"
+	"github.com/warpstreamlabs/bento/internal/log"
 	"github.com/warpstreamlabs/bento/internal/manager"
 	"github.com/warpstreamlabs/bento/internal/stream"
 	strmmgr "github.com/warpstreamlabs/bento/internal/stream/manager"
@@ -37,6 +38,14 @@ func RunService(c *cli.Context, cliOpts *CLIOpts, streamsMode bool) int {
 		fmt.Printf("Failed to create logger: %v\n", err)
 		return 1
 	}
+	// Shutting the logger down last, after RunManagerUntilStopped returns and
+	// the manager (and its tracer/metrics) have already shut down, ensures no
+	// log records emitted during their shutdown are lost.
+	defer func() {
+		ctx, done := context.WithTimeout(context.Background(), 5*time.Second)
+		defer done()
+		_ = log.Shutdown(ctx, logger)
+	}()
 
 	verLogger := logger.With("bento_version", cliOpts.Version)
 	isEnvVarConfigSet := confReader.ConfigFromEnvVar != ""

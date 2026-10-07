@@ -1,6 +1,7 @@
 package log
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -54,11 +55,13 @@ func New(stream io.Writer, fs ifs.FS, config Config) (Modular, error) {
 		return nil, fmt.Errorf("log format '%v' not recognized", config.Format)
 	}
 
+	var otelShutdown func(context.Context) error
 	if config.Otel.Enabled {
-		otelHandler, err := newOtelHandler(config.Otel)
+		otelHandler, shutdown, err := newOtelHandler(config.Otel)
 		if err != nil {
 			return nil, err
 		}
+		otelShutdown = shutdown
 		handler = &multiHandler{
 			level:    parseLevel(config.LogLevel),
 			handlers: []slog.Handler{handler, otelHandler},
@@ -80,7 +83,9 @@ func New(stream io.Writer, fs ifs.FS, config Config) (Modular, error) {
 		logger = logger.With(attrs...)
 	}
 
-	return NewBentoLogAdapter(logger), nil
+	adapter := NewBentoLogAdapter(logger)
+	adapter.shutdown = otelShutdown
+	return adapter, nil
 }
 
 // replaceAttr applies the configured level/message/timestamp field names and

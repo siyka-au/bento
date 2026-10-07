@@ -1,5 +1,10 @@
 package log
 
+import (
+	"context"
+	"errors"
+)
+
 type teeLogger struct {
 	a, b Modular
 }
@@ -50,4 +55,10 @@ func (t *teeLogger) Debug(format string, v ...any) {
 func (t *teeLogger) Trace(format string, v ...any) {
 	t.a.Trace(format, v...)
 	t.b.Trace(format, v...)
+}
+
+// Shutdown shuts down both wrapped loggers, if they support shutting down,
+// returning the combined error.
+func (t *teeLogger) Shutdown(ctx context.Context) error {
+	return errors.Join(Shutdown(ctx, t.a), Shutdown(ctx, t.b))
 }

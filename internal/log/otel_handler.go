@@ -19,7 +19,11 @@ import (
 // (go.opentelemetry.io/contrib/bridges/otelslog) over an SDK LoggerProvider.
 // Collector wiring (grpc/http, secure, 30s connect timeout) mirrors
 // internal/impl/otlp/tracer_otlp.go, which solves the same problem for spans.
-func newOtelHandler(conf OtelConfig) (slog.Handler, error) {
+//
+// The returned shutdown func flushes and closes the underlying
+// LoggerProvider; callers must call it before process exit or batched log
+// records are lost.
+func newOtelHandler(conf OtelConfig) (slog.Handler, func(context.Context) error, error) {
 	ctx := context.Background()
 
 	var opts []sdklog.LoggerProviderOption
@@ -27,14 +31,14 @@ func newOtelHandler(conf OtelConfig) (slog.Handler, error) {
 	for _, c := range conf.GRPC {
 		exp, err := newOtelLogGRPCExporter(ctx, c)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		opts = append(opts, sdklog.WithProcessor(sdklog.NewBatchProcessor(exp)))
 	}
 	for _, c := range conf.HTTP {
 		exp, err := newOtelLogHTTPExporter(ctx, c)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		opts = append(opts, sdklog.WithProcessor(sdklog.NewBatchProcessor(exp)))
 	}
@@ -50,7 +54,7 @@ func newOtelHandler(conf OtelConfig) (slog.Handler, error) {
 
 	provider := sdklog.NewLoggerProvider(opts...)
 
-	return otelslog.NewHandler("bento", otelslog.WithLoggerProvider(provider)), nil
+	return otelslog.NewHandler("bento", otelslog.WithLoggerProvider(provider)), provider.Shutdown, nil
 }
 
 func newOtelLogGRPCExporter(ctx context.Context, c OtelCollector) (sdklog.Exporter, error) {

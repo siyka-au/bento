@@ -180,6 +180,13 @@ func NewHandler(conf config.Type) (*Handler, error) {
 				return fmt.Errorf("failed to cleanly close resources: %v", err)
 			}
 
+			// Registered before the tracer shutdown below so that, since
+			// defers run in LIFO order, the logger is the last thing shut
+			// down and can still observe the tracer's own shutdown.
+			defer func() {
+				_ = log.Shutdown(context.Background(), logger)
+			}()
+
 			defer func() {
 				if shutter, ok := trac.(interface {
 					Shutdown(context.Context) error

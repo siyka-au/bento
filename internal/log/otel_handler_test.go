@@ -54,7 +54,7 @@ func TestOtelExportDisabledByDefault(t *testing.T) {
 }
 
 func TestOtelHandlerConstructs(t *testing.T) {
-	h, err := newOtelHandler(OtelConfig{
+	h, shutdown, err := newOtelHandler(OtelConfig{
 		Enabled: true,
 		GRPC:    []OtelCollector{{Address: "localhost:4317", Secure: false}},
 		HTTP:    []OtelCollector{{Address: "localhost:4318", Secure: false}},
@@ -62,4 +62,5 @@ func TestOtelHandlerConstructs(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, h)
+	require.NotNil(t, shutdown)
 }

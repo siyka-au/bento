@@ -1,5 +1,7 @@
 package log
 
+import "context"
+
 type errPromotionLogger struct {
 	logger Modular
 }
@@ -74,4 +76,9 @@ func (s *errPromotionLogger) Trace(format string, v ...any) {
 	if hasErr := s.promoteOnError("TRACE", format, v...); !hasErr {
 		s.logger.Trace(format, v...)
 	}
+}
+
+// Shutdown forwards to the wrapped logger, if it supports shutting down.
+func (s *errPromotionLogger) Shutdown(ctx context.Context) error {
+	return Shutdown(ctx, s.logger)
 }

@@ -8,7 +8,8 @@ import (
 )
 
 type logHandler struct {
-	slog *slog.Logger
+	slog     *slog.Logger
+	shutdown func(context.Context) error
 }
 
 func NewBentoLogAdapter(l *slog.Logger) *logHandler {
@@ -55,6 +56,15 @@ func (l *logHandler) Debug(format string, v ...any) {
 
 func (l *logHandler) Trace(format string, v ...any) {
 	l.slog.Log(context.Background(), LevelTrace, fmt.Sprintf(format, v...))
+}
+
+// Shutdown flushes and releases any resources held by this logger's
+// OpenTelemetry export (if it has any).
+func (l *logHandler) Shutdown(ctx context.Context) error {
+	if l.shutdown == nil {
+		return nil
+	}
+	return l.shutdown(ctx)
 }
 
 func (l *logHandler) clone() *logHandler {
