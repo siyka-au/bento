@@ -146,3 +146,41 @@ bento -r ./production/request.yaml -c ./config.yaml
 ```
 
 These flags also support wildcards, which allows you to import an entire directory of resource files like `bento -r "./staging/*.yaml" -c ./config.yaml`.
+
+## Telemetry Resources
+
+A telemetry resource is a named remote destination that logs, metrics and/or traces can be exported to. Currently the only kind of telemetry resource is an OpenTelemetry collector, exported to over OTLP. Telemetry resources are declared in the top level `telemetry_resources` field, alongside the other `*_resources` lists, and referenced by label from `logger.telemetry`, `metrics: { resource: <label> }` and `tracer: { resource: <label> }`.
+
+```yaml
+telemetry_resources:
+  - label: otel
+    open_telemetry_collector:
+      grpc:
+        - address: localhost:4317
+      tags:
+        deployment: prod
+      traces:
+        sampling:
+          enabled: true
+          ratio: 0.1
+      metrics:
+        push_interval: 10s
+
+logger:
+  level: INFO
+  telemetry: otel
+
+metrics:
+  resource: otel
+
+tracer:
+  resource: otel
+```
+
+Settings specific to a single signal, such as trace sampling or the metrics push interval, are configured on the telemetry resource itself rather than on the `metrics`/`tracer` component. A `resource` reference only carries a label, so there is nowhere else for them to live, and keeping them on the resource means every signal sharing a collector agrees on them.
+
+Telemetry resources are resolved once at startup, before the rest of the config is built. This means they are static for the lifetime of the process: they are not affected by config changes picked up with `--watcher`, and (in streams mode) they cannot be created or updated through the resource HTTP API.
+
+Like other resources, telemetry resources can be defined in a file imported with `-r`/`--resources` rather than the main config file. This is required in streams mode: resources declared in the main streams-mode config file are not loaded, so references to them fail with a "not found" error, and `telemetry_resources` must instead go in a `-r` resource file.
+
+Telemetry resources are for backends shared by more than one signal. Configuring a single signal inline, such as `metrics: prometheus`, `metrics: otel` or `tracer: open_telemetry_collector`, remains valid, and so does writing logs to a file with `logger.file`.

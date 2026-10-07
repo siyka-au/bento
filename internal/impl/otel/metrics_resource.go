@@ -23,7 +23,7 @@ func init() {
 		Name:    "resource",
 		Status:  docs.StatusExperimental,
 		Plugin:  true,
-		Summary: "Exports metrics to a named [telemetry resource](/docs/configuration/telemetry_resources).",
+		Summary: "Exports metrics to a named [telemetry resource](/docs/configuration/resources#telemetry-resources).",
 		Description: `
 This metrics type exports to an OpenTelemetry collector resource defined in
 the top level ` + "`telemetry_resources`" + ` field, identified by its label, rather

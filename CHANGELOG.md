@@ -12,10 +12,12 @@ surface matches `go-ads` and any OpenTelemetry bridge can plug in directly. The
 
 `TRACE` and `FATAL` are custom `slog` levels, using the same values as go-ads.
 
-A new `logger.otel` block exports every record over OTLP (grpc or http). It is a
-sub-block rather than a `type:`/`plugin:` backend like `metrics` and `tracer`,
-because there is only ever one process-wide logger. Records go to the primary
-output and the collector in the same pass, and both respect `logger.level`.
+A new `logger.telemetry` field names a telemetry resource (see "Telemetry
+resources" below) to export every record to over OTLP, in addition to the
+primary output. It is a field rather than a `type:`/`plugin:` backend like
+`metrics` and `tracer`, because there is only ever one process-wide logger.
+Records go to the primary output and the resource in the same pass, and both
+respect `logger.level`.
 
 ### Breaking
 
@@ -39,15 +41,18 @@ level=WARN msg="Warning message" @service=bento foo=bar count=10
 ### Added
 
 ```yaml
+telemetry_resources:
+  - label: otel
+    open_telemetry_collector:
+      grpc:
+        - address: localhost:4317
+      tags:
+        deployment: prod
+
 logger:
   level: INFO
   format: json
-  otel:
-    enabled: true
-    grpc:
-      - address: localhost:4317
-    tags:
-      deployment: prod
+  telemetry: otel
 ```
 
 ## [fork] OTel metrics exporter
@@ -71,6 +76,65 @@ metrics:
 The OTel family is pinned to v1.47.0. The gRPC trace exporter had been left
 behind at v1.40.0. The logs API and SDK reached v1.47.0 in the same release
 train, so logs use stable modules rather than the pre-1.0 ones.
+
+## [fork] Telemetry resources
+
+Adds a top level `telemetry_resources` list, alongside `cache_resources` and
+the other `*_resources` lists, where each entry is a named OpenTelemetry
+collector (`label` plus `open_telemetry_collector`, with its own `grpc`/`http`
+collector addresses, resource `tags`, trace sampling and metrics push
+interval). `tracer: { resource: <label> }` and `metrics: { resource: <label> }`
+export to one by label, and `logger.telemetry: <label>` copies every log
+record to one in addition to the primary output. A `resource` reference only
+carries a label, so when one is used, per-signal settings (trace sampling,
+metrics push interval) are set on the telemetry resource. The inline
+`metrics: otel` and `tracer: open_telemetry_collector` types are unchanged.
+
+```yaml
+telemetry_resources:
+  - label: otel
+    open_telemetry_collector:
+      grpc:
+        - address: localhost:4317
+
+logger:
+  telemetry: otel
+
+metrics:
+  resource: otel
+
+tracer:
+  resource: otel
+```
+
+This is a prototype for upstream issue
+[warpstreamlabs/bento#831](https://github.com/warpstreamlabs/bento/issues/831),
+following a suggestion on that issue to model OTel backends as Bento
+resources rather than as per-signal config.
+
+Known limitations:
+
+- Telemetry resources are fixed at startup. They are not reloaded by
+  `--watcher`, and cannot be created or updated through the streams-mode
+  resource HTTP API.
+- In streams mode, resources declared in the main config file are not loaded
+  (pre-existing upstream behaviour); put `telemetry_resources` in a `-r`
+  resource file instead.
+- The Go `StreamBuilder` API does not build telemetry resources yet;
+  `resource` references there fail with an error.
+- Logs do not yet carry `trace_id`/`span_id` (the logger API has no context
+  to carry them), but the shared resource at least gives logs, metrics and
+  traces a consistent `service.name`/`service.version`.
+
+### Breaking (fork only)
+
+- `logger.otel` is replaced by `logger.telemetry`, which names a
+  `telemetry_resources` entry instead of carrying its own collector config.
+
+### Fixed
+
+- The OTel log provider is now shut down on exit, so buffered log records
+  (including the final shutdown lines) are no longer lost.
 
 ## Phase 2 (planned, not yet implemented): trace instrumentation
 
