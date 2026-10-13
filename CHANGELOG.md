@@ -149,6 +149,21 @@ Known limitations:
   `metrics` block on a telemetry resource gains its own `histogram_buckets`
   field to override them.
 
+## [fork] Fixes carried ahead of upstream
+
+These are on their own branches off `upstream/main` (`fix/...`) for upstream
+PRs, and cherry-picked here so the fork has them now. Drop them when merging an
+upstream release that includes them.
+
+- Spans of messages that fail a processor or an output write now get an
+  OpenTelemetry error status and a recorded exception, so Tempo and Jaeger show
+  them as failed (previously only an `error` tag).
+- The `open_telemetry_collector` and `jaeger` tracers use a `ParentBased`
+  sampler: the ratio applies to root spans, and spans with a sampled parent
+  (e.g. from `extract_tracing_map`) follow it. Telemetry resources do the same.
+- The shutdown message about possible duplicate delivery is logged at WARN
+  instead of INFO.
+
 ## Phase 2 (planned, not yet implemented): trace instrumentation
 
 Current span coverage is at the input, output, processor, buffer and
