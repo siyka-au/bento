@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -22,6 +23,45 @@ import (
 // connectTimeout bounds exporter construction, mirroring
 // internal/impl/otlp/tracer_otlp.go and internal/impl/otel/metrics_otel.go.
 const connectTimeout = 30 * time.Second
+
+// collectorOptions builds the options common to every OTLP exporter from a
+// Collector: the endpoint (url takes precedence over address, in which case
+// secure is ignored since TLS follows the URL's scheme) and extra headers.
+// It is generic over each exporter's distinct Option type so this branching
+// isn't repeated for all six exporters.
+//
+// endpointURL is the URL to use when c.URL is set: the collector's URL as-is
+// for gRPC, or with a signal path appended for HTTP (see httpSignalURL).
+func collectorOptions[Opt any](
+	c Collector,
+	endpointURL string,
+	withEndpoint func(string) Opt,
+	withEndpointURL func(string) Opt,
+	withInsecure func() Opt,
+	withHeaders func(map[string]string) Opt,
+) []Opt {
+	var opts []Opt
+	if c.URL != "" {
+		opts = append(opts, withEndpointURL(endpointURL))
+	} else {
+		opts = append(opts, withEndpoint(c.Address))
+		if !c.Secure {
+			opts = append(opts, withInsecure())
+		}
+	}
+	if len(c.Headers) > 0 {
+		opts = append(opts, withHeaders(c.Headers))
+	}
+	return opts
+}
+
+// httpSignalURL appends an OTLP signal path (e.g. "/v1/traces") to a
+// collector's base URL, following the same convention as the standard
+// OTEL_EXPORTER_OTLP_ENDPOINT env var: one trailing slash is stripped first
+// so the result never ends up with a doubled slash.
+func httpSignalURL(base, signalPath string) string {
+	return strings.TrimSuffix(base, "/") + signalPath
+}
 
 // Resource is a named OpenTelemetry collector definition. It owns a single
 // *resource.Resource (the set of attributes describing this process) that is
@@ -98,10 +138,8 @@ func newTraceGRPCExporter(ctx context.Context, c Collector) (tracesdk.SpanExport
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 
-	opts := []otlptracegrpc.Option{otlptracegrpc.WithEndpoint(c.Address)}
-	if !c.Secure {
-		opts = append(opts, otlptracegrpc.WithInsecure())
-	}
+	opts := collectorOptions(c, c.URL,
+		otlptracegrpc.WithEndpoint, otlptracegrpc.WithEndpointURL, otlptracegrpc.WithInsecure, otlptracegrpc.WithHeaders)
 	return otlptrace.New(ctx, otlptracegrpc.NewClient(opts...))
 }
 
@@ -109,10 +147,8 @@ func newTraceHTTPExporter(ctx context.Context, c Collector) (tracesdk.SpanExport
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 
-	opts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(c.Address)}
-	if !c.Secure {
-		opts = append(opts, otlptracehttp.WithInsecure())
-	}
+	opts := collectorOptions(c, httpSignalURL(c.URL, "/v1/traces"),
+		otlptracehttp.WithEndpoint, otlptracehttp.WithEndpointURL, otlptracehttp.WithInsecure, otlptracehttp.WithHeaders)
 	return otlptrace.New(ctx, otlptracehttp.NewClient(opts...))
 }
 
@@ -148,10 +184,8 @@ func newMetricGRPCExporter(ctx context.Context, c Collector) (sdkmetric.Exporter
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 
-	opts := []otlpmetricgrpc.Option{otlpmetricgrpc.WithEndpoint(c.Address)}
-	if !c.Secure {
-		opts = append(opts, otlpmetricgrpc.WithInsecure())
-	}
+	opts := collectorOptions(c, c.URL,
+		otlpmetricgrpc.WithEndpoint, otlpmetricgrpc.WithEndpointURL, otlpmetricgrpc.WithInsecure, otlpmetricgrpc.WithHeaders)
 	return otlpmetricgrpc.New(ctx, opts...)
 }
 
@@ -159,10 +193,8 @@ func newMetricHTTPExporter(ctx context.Context, c Collector) (sdkmetric.Exporter
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 
-	opts := []otlpmetrichttp.Option{otlpmetrichttp.WithEndpoint(c.Address)}
-	if !c.Secure {
-		opts = append(opts, otlpmetrichttp.WithInsecure())
-	}
+	opts := collectorOptions(c, httpSignalURL(c.URL, "/v1/metrics"),
+		otlpmetrichttp.WithEndpoint, otlpmetrichttp.WithEndpointURL, otlpmetrichttp.WithInsecure, otlpmetrichttp.WithHeaders)
 	return otlpmetrichttp.New(ctx, opts...)
 }
 
@@ -193,10 +225,8 @@ func newLogGRPCExporter(ctx context.Context, c Collector) (sdklog.Exporter, erro
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 
-	opts := []otlploggrpc.Option{otlploggrpc.WithEndpoint(c.Address)}
-	if !c.Secure {
-		opts = append(opts, otlploggrpc.WithInsecure())
-	}
+	opts := collectorOptions(c, c.URL,
+		otlploggrpc.WithEndpoint, otlploggrpc.WithEndpointURL, otlploggrpc.WithInsecure, otlploggrpc.WithHeaders)
 	return otlploggrpc.New(ctx, opts...)
 }
 
@@ -204,9 +234,7 @@ func newLogHTTPExporter(ctx context.Context, c Collector) (sdklog.Exporter, erro
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 
-	opts := []otlploghttp.Option{otlploghttp.WithEndpoint(c.Address)}
-	if !c.Secure {
-		opts = append(opts, otlploghttp.WithInsecure())
-	}
+	opts := collectorOptions(c, httpSignalURL(c.URL, "/v1/logs"),
+		otlploghttp.WithEndpoint, otlploghttp.WithEndpointURL, otlploghttp.WithInsecure, otlploghttp.WithHeaders)
 	return otlploghttp.New(ctx, opts...)
 }

@@ -44,8 +44,8 @@ open_telemetry_collector:
 	require.NoError(t, err)
 
 	assert.Equal(t, "my_resource", conf.Label)
-	assert.Equal(t, []Collector{{Address: "localhost:4317", Secure: true}}, conf.OpenTelemetryCollector.GRPC)
-	assert.Equal(t, []Collector{{Address: "localhost:4318", Secure: false}}, conf.OpenTelemetryCollector.HTTP)
+	assert.Equal(t, []Collector{{Address: "localhost:4317", Secure: true, Headers: map[string]string{}}}, conf.OpenTelemetryCollector.GRPC)
+	assert.Equal(t, []Collector{{Address: "localhost:4318", Secure: false, Headers: map[string]string{}}}, conf.OpenTelemetryCollector.HTTP)
 	assert.Equal(t, map[string]string{"env": "prod"}, conf.OpenTelemetryCollector.Tags)
 	assert.Equal(t, SamplingConfig{Enabled: true, Ratio: 0.5}, conf.OpenTelemetryCollector.Traces.Sampling)
 	assert.Equal(t, "30s", conf.OpenTelemetryCollector.Metrics.PushInterval)
@@ -77,4 +77,62 @@ open_telemetry_collector: {}
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "my_resource")
 	assert.Contains(t, err.Error(), "grpc or http")
+}
+
+func TestFromParsedURLAndHeadersRoundTrip(t *testing.T) {
+	pConf := parseConfig(t, `
+label: my_resource
+open_telemetry_collector:
+  grpc:
+    - url: https://otel-collector.example.com:4317
+      headers:
+        Authorization: Basic Z3JwYw==
+  http:
+    - url: https://otlp-gateway.example.com/otlp
+      headers:
+        Authorization: Basic aHR0cA==
+`)
+
+	conf, err := FromParsed(pConf)
+	require.NoError(t, err)
+
+	assert.Equal(t, []Collector{{
+		URL:     "https://otel-collector.example.com:4317",
+		Headers: map[string]string{"Authorization": "Basic Z3JwYw=="},
+	}}, conf.OpenTelemetryCollector.GRPC)
+	assert.Equal(t, []Collector{{
+		URL:     "https://otlp-gateway.example.com/otlp",
+		Headers: map[string]string{"Authorization": "Basic aHR0cA=="},
+	}}, conf.OpenTelemetryCollector.HTTP)
+}
+
+func TestFromParsedAddressAndURLBothSetError(t *testing.T) {
+	pConf := parseConfig(t, `
+label: my_resource
+open_telemetry_collector:
+  grpc:
+    - address: localhost:4317
+      url: https://otel-collector.example.com:4317
+`)
+
+	_, err := FromParsed(pConf)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "my_resource")
+	assert.Contains(t, err.Error(), "grpc[0]")
+	assert.Contains(t, err.Error(), "exactly one of address or url")
+}
+
+func TestFromParsedAddressAndURLNeitherSetError(t *testing.T) {
+	pConf := parseConfig(t, `
+label: my_resource
+open_telemetry_collector:
+  http:
+    - secure: true
+`)
+
+	_, err := FromParsed(pConf)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "my_resource")
+	assert.Contains(t, err.Error(), "http[0]")
+	assert.Contains(t, err.Error(), "exactly one of address or url")
 }

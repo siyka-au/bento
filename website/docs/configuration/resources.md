@@ -179,6 +179,18 @@ tracer:
 
 Settings specific to a single signal, such as trace sampling or the metrics push interval, are configured on the telemetry resource itself rather than on the `metrics`/`tracer` component. A `resource` reference only carries a label, so there is nowhere else for them to live, and keeping them on the resource means every signal sharing a collector agrees on them.
 
+For a hosted backend that isn't reachable by a plain `address`, a collector can instead give a `url` plus `headers`. An http collector's `url` is a base URL: each signal is sent to it with `/v1/traces`, `/v1/metrics` or `/v1/logs` appended, and TLS follows the URL's scheme. This is the form hosted backends such as Grafana Cloud expect, authenticated with a header built from an environment variable:
+
+```yaml
+telemetry_resources:
+  - label: otel
+    open_telemetry_collector:
+      http:
+        - url: https://otlp.example.com/otlp
+          headers:
+            Authorization: "Basic ${OTLP_AUTH}"
+```
+
 Telemetry resources are resolved once at startup, before the rest of the config is built. This means they are static for the lifetime of the process: they are not affected by config changes picked up with `--watcher`, and (in streams mode) they cannot be created or updated through the resource HTTP API.
 
 Like other resources, telemetry resources can be defined in a file imported with `-r`/`--resources` rather than the main config file. This is required in streams mode: resources declared in the main streams-mode config file are not loaded, so references to them fail with a "not found" error, and `telemetry_resources` must instead go in a `-r` resource file.

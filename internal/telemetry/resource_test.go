@@ -2,11 +2,16 @@ package telemetry
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
 )
 
 func attrMap(r *Resource) map[string]string {
@@ -107,5 +112,68 @@ func TestResourceProvidersConstructAndShutdown(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("provider shutdown did not return in time")
+	}
+}
+
+// TestHTTPCollectorURLAndHeaders proves the wire behaviour of the url and
+// headers collector fields: each signal is exported to <url>/v1/<signal>
+// with the configured headers attached.
+func TestHTTPCollectorURLAndHeaders(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	var authHeaders []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		mu.Lock()
+		paths = append(paths, req.URL.Path)
+		authHeaders = append(authHeaders, req.Header.Get("Authorization"))
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	conf := Config{
+		Label: "test",
+		OpenTelemetryCollector: OTelCollectorConfig{
+			HTTP: []Collector{{
+				URL:     server.URL + "/otlp",
+				Headers: map[string]string{"Authorization": "Basic dGVzdA=="},
+			}},
+			Metrics: MetricsConfig{PushInterval: "10s"},
+		},
+	}
+
+	r, err := newResource(conf, "")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	tp, err := r.TracerProvider(ctx)
+	require.NoError(t, err)
+	_, span := tp.Tracer("test").Start(ctx, "test-span")
+	span.End()
+	require.NoError(t, tp.Shutdown(ctx))
+
+	mp, err := r.MeterProvider(ctx)
+	require.NoError(t, err)
+	counter, err := mp.Meter("test").Int64Counter("test_counter")
+	require.NoError(t, err)
+	counter.Add(ctx, 1)
+	require.NoError(t, mp.Shutdown(ctx))
+
+	lp, err := r.LoggerProvider(ctx)
+	require.NoError(t, err)
+	var rec log.Record
+	rec.SetBody(attribute.StringValue("hello"))
+	lp.Logger("test").Emit(ctx, rec)
+	require.NoError(t, lp.Shutdown(ctx))
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	assert.ElementsMatch(t, []string{"/otlp/v1/traces", "/otlp/v1/metrics", "/otlp/v1/logs"}, paths)
+	for _, h := range authHeaders {
+		assert.Equal(t, "Basic dGVzdA==", h)
 	}
 }

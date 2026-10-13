@@ -89,6 +89,9 @@ record to one in addition to the primary output. A `resource` reference only
 carries a label, so when one is used, per-signal settings (trace sampling,
 metrics push interval) are set on the telemetry resource. The inline
 `metrics: otel` and `tracer: open_telemetry_collector` types are unchanged.
+A collector can give a `url` instead of an `address`, plus extra `headers`,
+for hosted OTLP backends (e.g. Grafana Cloud) that need a path prefix and an
+auth header.
 
 ```yaml
 telemetry_resources:
