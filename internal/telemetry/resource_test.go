@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func attrMap(r *Resource) map[string]string {
@@ -115,6 +116,40 @@ func TestResourceProvidersConstructAndShutdown(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("provider shutdown did not return in time")
 	}
+}
+
+func TestTracerProviderSamplingRespectsSampledParent(t *testing.T) {
+	conf := baseConf("test")
+	conf.OpenTelemetryCollector.Traces.Sampling = SamplingConfig{Enabled: true, Ratio: 0}
+	r, err := newResource(conf, "")
+	require.NoError(t, err)
+
+	tp, err := r.TracerProvider(context.Background())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		_ = tp.Shutdown(ctx)
+	})
+
+	traceID, err := trace.TraceIDFromHex("4bf92f3577b34da6a3ce929d0e0e4736")
+	require.NoError(t, err)
+	spanID, err := trace.SpanIDFromHex("00f067aa0ba902b7")
+	require.NoError(t, err)
+	parent := trace.ContextWithRemoteSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		TraceFlags: trace.FlagsSampled,
+		Remote:     true,
+	}))
+
+	_, child := tp.Tracer("test").Start(parent, "child")
+	defer child.End()
+	assert.True(t, child.SpanContext().IsSampled(), "a sampled parent's child should be sampled even at ratio 0")
+
+	_, root := tp.Tracer("test").Start(context.Background(), "root")
+	defer root.End()
+	assert.False(t, root.SpanContext().IsSampled(), "a root span should follow the ratio of 0")
 }
 
 // TestHTTPCollectorURLAndHeaders proves the wire behaviour of the url and

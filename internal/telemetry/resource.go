@@ -113,7 +113,7 @@ func (r *Resource) TracerProvider(ctx context.Context) (*tracesdk.TracerProvider
 
 	sampling := r.conf.OpenTelemetryCollector.Traces.Sampling
 	if sampling.Enabled {
-		opts = append(opts, tracesdk.WithSampler(tracesdk.TraceIDRatioBased(sampling.Ratio)))
+		opts = append(opts, tracesdk.WithSampler(tracesdk.ParentBased(tracesdk.TraceIDRatioBased(sampling.Ratio))))
 	}
 
 	for _, c := range r.conf.OpenTelemetryCollector.GRPC {
