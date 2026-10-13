@@ -3,6 +3,7 @@ package otel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -23,6 +24,36 @@ import (
 // gives us no context of their own to work with (metrics.Type.Close takes
 // none).
 const closeTimeout = 10 * time.Second
+
+// defaultHistogramBuckets are the bucket boundaries (in seconds) applied to
+// timer histograms when histogram_buckets is left empty. They match
+// prometheus.DefBuckets, for parity with Bento's "prometheus" metrics
+// exporter (internal/impl/prometheus/metrics_prometheus.go), and replace the
+// OTel SDK's own default boundaries, which are scaled for milliseconds and
+// put every real latency in bucket zero.
+var defaultHistogramBuckets = []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10}
+
+// histogramBucketsView validates a configured list of histogram bucket
+// boundaries (in seconds) and, if non-empty, returns an SDK option that
+// overrides the default aggregation for every histogram instrument - there
+// being only one in this package: the timer. An empty list returns a nil
+// option, leaving the instrument-level default (defaultHistogramBuckets) in
+// place.
+func histogramBucketsView(buckets []float64) (sdkmetric.Option, error) {
+	if len(buckets) == 0 {
+		return nil, nil
+	}
+	for i := 1; i < len(buckets); i++ {
+		if buckets[i] <= buckets[i-1] {
+			return nil, fmt.Errorf("histogram_buckets must be strictly increasing: %v", buckets)
+		}
+	}
+	view := sdkmetric.NewView(
+		sdkmetric.Instrument{Kind: sdkmetric.InstrumentKindHistogram},
+		sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{Boundaries: buckets}},
+	)
+	return sdkmetric.WithView(view), nil
+}
 
 func metricsSpec() *service.ConfigSpec {
 	return service.NewConfigSpec().
@@ -50,7 +81,11 @@ func metricsSpec() *service.ConfigSpec {
 		Field(service.NewDurationField("push_interval").
 			Description("The interval between pushes of accumulated metrics to the collector.").
 			Default("10s").
-			Advanced())
+			Advanced()).
+		Field(service.NewFloatListField("histogram_buckets").
+			Description("Timing metrics histogram buckets, in seconds. If left empty, defaults to the same buckets as Bento's `prometheus` metrics exporter (`[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]`). The smallest default bucket is 5ms, so fast pipelines may want finer buckets, e.g. `[0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1]`.").
+			Advanced().
+			Default([]any{}))
 }
 
 func init() {
@@ -109,6 +144,14 @@ func newOtelMetricsFromParsed(conf *service.ParsedConfig) (service.MetricsExport
 	if err != nil {
 		return nil, err
 	}
+	histogramBuckets, err := conf.FieldFloatList("histogram_buckets")
+	if err != nil {
+		return nil, err
+	}
+	bucketsOpt, err := histogramBucketsView(histogramBuckets)
+	if err != nil {
+		return nil, err
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -147,6 +190,9 @@ func newOtelMetricsFromParsed(conf *service.ParsedConfig) (service.MetricsExport
 
 	opts := []sdkmetric.Option{
 		sdkmetric.WithResource(resource.NewWithAttributes(semconv.SchemaURL, attrs...)),
+	}
+	if bucketsOpt != nil {
+		opts = append(opts, bucketsOpt)
 	}
 	for _, r := range exporters {
 		opts = append(opts, sdkmetric.WithReader(r))
@@ -198,7 +244,14 @@ func (o *metricsCore) GetTimer(path string) metrics.StatTimer {
 }
 
 func (o *metricsCore) GetTimerVec(path string, labelNames ...string) metrics.StatTimerVec {
-	timer, _ := o.meter.Float64Histogram(path, metric.WithUnit("s"))
+	// The explicit boundaries set here are only the instrument default: a
+	// configured histogram_buckets View (see histogramBucketsView) takes
+	// precedence over it for every histogram, regardless of which exporter
+	// built the provider.
+	timer, _ := o.meter.Float64Histogram(path,
+		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(defaultHistogramBuckets...),
+	)
 	return &otelTimerVec{timer: timer, labelKeys: labelNames}
 }
 

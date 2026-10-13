@@ -30,6 +30,7 @@ const (
 	fieldSamplingRatio          = "ratio"
 	fieldMetrics                = "metrics"
 	fieldPushInterval           = "push_interval"
+	fieldHistogramBuckets       = "histogram_buckets"
 )
 
 // Collector describes a single OTLP collector endpoint to export telemetry
@@ -54,7 +55,8 @@ type TracesConfig struct {
 
 // MetricsConfig contains configuration specific to exported metrics.
 type MetricsConfig struct {
-	PushInterval string `yaml:"push_interval"`
+	PushInterval     string    `yaml:"push_interval"`
+	HistogramBuckets []float64 `yaml:"histogram_buckets"`
 }
 
 // OTelCollectorConfig contains configuration for exporting telemetry to one
@@ -99,6 +101,7 @@ func FieldSpecs() docs.FieldSpecs {
 			),
 			docs.FieldObject(fieldMetrics, "Settings specific to exported metrics.").WithChildren(
 				docs.FieldString(fieldPushInterval, "The interval between pushes of accumulated metrics to the collector.").HasDefault("10s"),
+				docs.FieldFloat(fieldHistogramBuckets, "Timing metrics histogram buckets, in seconds. If left empty, defaults to the same buckets as Bento's `prometheus` metrics exporter (`[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]`). The smallest default bucket is 5ms, so fast pipelines may want finer buckets, e.g. `[0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1]`.").Array().HasDefault([]any{}),
 			),
 		),
 	}
@@ -203,6 +206,15 @@ func tracesConfigFromParsed(p *docs.ParsedConfig) (conf TracesConfig, err error)
 func metricsConfigFromParsed(p *docs.ParsedConfig) (conf MetricsConfig, err error) {
 	if conf.PushInterval, err = p.FieldString(fieldPushInterval); err != nil {
 		return
+	}
+	if conf.HistogramBuckets, err = p.FieldFloatList(fieldHistogramBuckets); err != nil {
+		return
+	}
+	for i := 1; i < len(conf.HistogramBuckets); i++ {
+		if conf.HistogramBuckets[i] <= conf.HistogramBuckets[i-1] {
+			err = fmt.Errorf("histogram_buckets must be strictly increasing: %v", conf.HistogramBuckets)
+			return
+		}
 	}
 	return
 }

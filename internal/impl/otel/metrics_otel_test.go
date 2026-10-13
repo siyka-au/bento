@@ -78,3 +78,62 @@ func TestOtelTimerRecordsSeconds(t *testing.T) {
 	assert.Equal(t, 1.5, hist.DataPoints[0].Sum)
 	assert.Equal(t, uint64(1), hist.DataPoints[0].Count)
 }
+
+// TestOtelTimerDefaultBucketsAreSecondScale proves the fix for the
+// mislabelled-quantile bug: without a configured histogram_buckets View, the
+// default bucket boundaries must be prometheus.DefBuckets (seconds), not the
+// OTel SDK's own millisecond-scaled defaults. A ~4ms latency should fall
+// into the first bucket, (-inf, 0.005].
+func TestOtelTimerDefaultBucketsAreSecondScale(t *testing.T) {
+	m, reader := newTestMetrics(t)
+
+	timer := m.NewTimerCtor("request_latency_ns")()
+	timer.Timing(4_000_000) // 4ms
+
+	hist, ok := collect(t, reader)["request_latency_ns"].Data.(metricdata.Histogram[float64])
+	require.True(t, ok)
+	require.Len(t, hist.DataPoints, 1)
+
+	dp := hist.DataPoints[0]
+	assert.Equal(t, defaultHistogramBuckets, dp.Bounds)
+	require.NotEmpty(t, dp.BucketCounts)
+	assert.Equal(t, uint64(1), dp.BucketCounts[0])
+	for _, c := range dp.BucketCounts[1:] {
+		assert.Zero(t, c)
+	}
+}
+
+func TestHistogramBucketsViewEmptyIsNoOp(t *testing.T) {
+	opt, err := histogramBucketsView(nil)
+	require.NoError(t, err)
+	assert.Nil(t, opt)
+}
+
+func TestHistogramBucketsViewNonIncreasingErrors(t *testing.T) {
+	_, err := histogramBucketsView([]float64{0.1, 0.1, 0.5})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "strictly increasing")
+}
+
+// TestHistogramBucketsViewOverridesDefault proves a configured
+// histogram_buckets View takes precedence over the instrument-level default
+// set by GetTimerVec.
+func TestHistogramBucketsViewOverridesDefault(t *testing.T) {
+	buckets := []float64{0.001, 0.005, 0.01}
+	opt, err := histogramBucketsView(buckets)
+	require.NoError(t, err)
+	require.NotNil(t, opt)
+
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader), opt)
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+
+	m := &otelMetrics{core: newMetricsCore(provider)}
+	timer := m.NewTimerCtor("custom_latency_ns")()
+	timer.Timing(2_000_000) // 2ms
+
+	hist, ok := collect(t, reader)["custom_latency_ns"].Data.(metricdata.Histogram[float64])
+	require.True(t, ok)
+	require.Len(t, hist.DataPoints, 1)
+	assert.Equal(t, buckets, hist.DataPoints[0].Bounds)
+}

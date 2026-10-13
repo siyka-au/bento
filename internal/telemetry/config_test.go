@@ -65,6 +65,37 @@ open_telemetry_collector:
 	assert.Equal(t, map[string]string{}, conf.OpenTelemetryCollector.Tags)
 	assert.Equal(t, SamplingConfig{Enabled: false, Ratio: 0}, conf.OpenTelemetryCollector.Traces.Sampling)
 	assert.Equal(t, "10s", conf.OpenTelemetryCollector.Metrics.PushInterval)
+	assert.Empty(t, conf.OpenTelemetryCollector.Metrics.HistogramBuckets)
+}
+
+func TestFromParsedHistogramBucketsRoundTrip(t *testing.T) {
+	pConf := parseConfig(t, `
+label: my_resource
+open_telemetry_collector:
+  grpc:
+    - address: localhost:4317
+  metrics:
+    histogram_buckets: [0.0005, 0.001, 0.0025, 0.005, 0.01]
+`)
+
+	conf, err := FromParsed(pConf)
+	require.NoError(t, err)
+	assert.Equal(t, []float64{0.0005, 0.001, 0.0025, 0.005, 0.01}, conf.OpenTelemetryCollector.Metrics.HistogramBuckets)
+}
+
+func TestFromParsedHistogramBucketsNonIncreasingError(t *testing.T) {
+	pConf := parseConfig(t, `
+label: my_resource
+open_telemetry_collector:
+  grpc:
+    - address: localhost:4317
+  metrics:
+    histogram_buckets: [0.01, 0.01, 0.1]
+`)
+
+	_, err := FromParsed(pConf)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "strictly increasing")
 }
 
 func TestFromParsedMissingCollectorsError(t *testing.T) {

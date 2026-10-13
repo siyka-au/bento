@@ -161,6 +161,9 @@ func (r *Resource) MeterProvider(ctx context.Context) (*sdkmetric.MeterProvider,
 	}
 
 	opts := []sdkmetric.Option{sdkmetric.WithResource(r.res)}
+	if view := histogramBucketsView(r.conf.OpenTelemetryCollector.Metrics.HistogramBuckets); view != nil {
+		opts = append(opts, sdkmetric.WithView(view))
+	}
 
 	for _, c := range r.conf.OpenTelemetryCollector.GRPC {
 		exp, err := newMetricGRPCExporter(ctx, c)
@@ -178,6 +181,21 @@ func (r *Resource) MeterProvider(ctx context.Context) (*sdkmetric.MeterProvider,
 	}
 
 	return sdkmetric.NewMeterProvider(opts...), nil
+}
+
+// histogramBucketsView returns an SDK View that overrides the default
+// aggregation for every histogram instrument with the given bucket
+// boundaries (in seconds), or nil if buckets is empty. Boundaries are
+// validated as strictly increasing by metricsConfigFromParsed, so this
+// cannot fail; it builds the View rather than validating one.
+func histogramBucketsView(buckets []float64) sdkmetric.View {
+	if len(buckets) == 0 {
+		return nil
+	}
+	return sdkmetric.NewView(
+		sdkmetric.Instrument{Kind: sdkmetric.InstrumentKindHistogram},
+		sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{Boundaries: buckets}},
+	)
 }
 
 func newMetricGRPCExporter(ctx context.Context, c Collector) (sdkmetric.Exporter, error) {

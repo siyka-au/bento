@@ -71,6 +71,12 @@ metrics:
     push_interval: 10s
 ```
 
+Timer histograms now default to `prometheus.DefBuckets` (seconds) instead of
+the OTel SDK's own millisecond-scaled defaults, which put every real latency
+in the first bucket and made `histogram_quantile` quantiles meaningless; a
+`histogram_buckets` field overrides them, mirroring the `prometheus` metrics
+exporter's field of the same name.
+
 ## [fork] OpenTelemetry dependency alignment
 
 The OTel family is pinned to v1.47.0. The gRPC trace exporter had been left
@@ -138,6 +144,10 @@ Known limitations:
 
 - The OTel log provider is now shut down on exit, so buffered log records
   (including the final shutdown lines) are no longer lost.
+- The `resource` metrics type's timer histograms get the same second-scale
+  default bucket fix as the `otel` metrics exporter (see above), and the
+  `metrics` block on a telemetry resource gains its own `histogram_buckets`
+  field to override them.
 
 ## Phase 2 (planned, not yet implemented): trace instrumentation
 

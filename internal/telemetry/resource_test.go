@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 func attrMap(r *Resource) map[string]string {
@@ -176,4 +178,37 @@ func TestHTTPCollectorURLAndHeaders(t *testing.T) {
 	for _, h := range authHeaders {
 		assert.Equal(t, "Basic dGVzdA==", h)
 	}
+}
+
+func TestHistogramBucketsViewEmptyIsNoOp(t *testing.T) {
+	assert.Nil(t, histogramBucketsView(nil))
+}
+
+// TestHistogramBucketsViewAppliesConfiguredBounds proves a configured
+// histogram_buckets View, applied as a MeterProvider option the same way
+// MeterProvider applies it, overrides the default bucket boundaries for
+// every histogram. MeterProvider itself only accepts OTLP readers, so this
+// exercises the View-building helper against a ManualReader directly.
+func TestHistogramBucketsViewAppliesConfiguredBounds(t *testing.T) {
+	buckets := []float64{0.0005, 0.001, 0.0025, 0.005, 0.01}
+	view := histogramBucketsView(buckets)
+	require.NotNil(t, view)
+
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader), sdkmetric.WithView(view))
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+
+	hist, err := provider.Meter("test").Float64Histogram("test_timer")
+	require.NoError(t, err)
+	hist.Record(context.Background(), 0.002)
+
+	var rm metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(context.Background(), &rm))
+	require.Len(t, rm.ScopeMetrics, 1)
+	require.Len(t, rm.ScopeMetrics[0].Metrics, 1)
+
+	data, ok := rm.ScopeMetrics[0].Metrics[0].Data.(metricdata.Histogram[float64])
+	require.True(t, ok)
+	require.Len(t, data.DataPoints, 1)
+	assert.Equal(t, buckets, data.DataPoints[0].Bounds)
 }
