@@ -53,6 +53,20 @@ func TestOtelCounterBindsLabelsAtRecordTime(t *testing.T) {
 	assert.Equal(t, int64(1), byLabel["other"])
 }
 
+// TestOtelCounterStartsAtZero proves the fix for counters that otherwise
+// don't appear in Prometheus until their first increment, which makes
+// increase()/rate() treat that first sample as the baseline and report 0.
+func TestOtelCounterStartsAtZero(t *testing.T) {
+	m, reader := newTestMetrics(t)
+
+	m.core.GetCounterVec("output_connection_lost", "label").With("foooutput")
+
+	sum, ok := collect(t, reader)["output_connection_lost"].Data.(metricdata.Sum[int64])
+	require.True(t, ok)
+	require.Len(t, sum.DataPoints, 1)
+	assert.Equal(t, int64(0), sum.DataPoints[0].Value)
+}
+
 func TestOtelGaugeSetsLatestValue(t *testing.T) {
 	m, reader := newTestMetrics(t)
 

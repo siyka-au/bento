@@ -77,6 +77,15 @@ in the first bucket and made `histogram_quantile` quantiles meaningless; a
 `histogram_buckets` field overrides them, mirroring the `prometheus` metrics
 exporter's field of the same name.
 
+### Fixed
+
+- Counters now record an initial zero the first time a label set is bound,
+  instead of only appearing in Prometheus at their first increment. The OTel
+  SDK otherwise only exports a series once `Add` has been called for it, so
+  `increase()`/`rate()` treated that first sample as the baseline and reported
+  0 across a network outage or other burst of errors. This also fixes the
+  `resource` metrics type, which shares the same counter implementation.
+
 ## [fork] OpenTelemetry dependency alignment
 
 The OTel family is pinned to v1.47.0. The gRPC trace exporter had been left

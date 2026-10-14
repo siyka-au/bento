@@ -316,9 +316,17 @@ type otelCounterVec struct {
 }
 
 func (v *otelCounterVec) With(labelValues ...string) metrics.StatCounter {
+	opts := []metric.AddOption{metric.WithAttributes(labelAttributes(v.labelKeys, labelValues)...)}
+	// The OTel SDK only exports a series for an attribute set once Add has
+	// been called for it, so without this, a counter like output_error first
+	// appears in Prometheus at its first increment, and increase()/rate()
+	// treat that as the baseline and report 0 across the gap. Add(0) is
+	// idempotent in value, so binding the same label set again (e.g. a second
+	// GetCounter call for the same path) is harmless.
+	v.counter.Add(context.Background(), 0, opts...)
 	return &otelCounter{
 		counter: v.counter,
-		opts:    []metric.AddOption{metric.WithAttributes(labelAttributes(v.labelKeys, labelValues)...)},
+		opts:    opts,
 	}
 }
 
