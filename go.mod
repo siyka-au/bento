@@ -170,6 +170,7 @@ require (
 	go.etcd.io/etcd/client/v3 v3.6.5
 	go.mongodb.org/mongo-driver v1.17.9
 	go.nanomsg.org/mangos/v3 v3.4.2
+	go.opentelemetry.io/contrib/instrumentation/runtime v0.63.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/exporters/jaeger v1.17.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.45.0

@@ -77,7 +77,11 @@ func metricsSpec() *service.ConfigSpec {
 		Field(service.NewFloatListField("histogram_buckets").
 			Description("Timing metrics histogram buckets, in seconds. If left empty, defaults to the same buckets as Bento's `prometheus` metrics exporter (`[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]`). The smallest default bucket is 5ms, so fast pipelines may want finer buckets, e.g. `[0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1]`.").
 			Advanced().
-			Default([]any{}))
+			Default([]any{})).
+		Field(service.NewBoolField("runtime_metrics").
+			Description("Also export Go runtime metrics (memory, GC, goroutine count) and a process start time, for diagnosing leaks and restarts in long-running deployments.").
+			Advanced().
+			Default(false))
 }
 
 func init() {
@@ -144,6 +148,10 @@ func newOtelMetricsFromParsed(conf *service.ParsedConfig) (service.MetricsExport
 	if err != nil {
 		return nil, err
 	}
+	runtimeMetrics, err := conf.FieldBool("runtime_metrics")
+	if err != nil {
+		return nil, err
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -190,6 +198,12 @@ func newOtelMetricsFromParsed(conf *service.ParsedConfig) (service.MetricsExport
 		opts = append(opts, sdkmetric.WithReader(r))
 	}
 	provider := sdkmetric.NewMeterProvider(opts...)
+
+	if runtimeMetrics {
+		if err := startRuntimeMetrics(provider); err != nil {
+			return nil, err
+		}
+	}
 
 	return newOtelMetrics(provider), nil
 }

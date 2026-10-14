@@ -48,6 +48,7 @@ metrics:
     tags: {}
     push_interval: 10s
     histogram_buckets: []
+    runtime_metrics: false
   mapping: ""
 ```
 
@@ -137,5 +138,13 @@ Timing metrics histogram buckets, in seconds. If left empty, defaults to the sam
 
 Type: `array`  
 Default: `[]`  
+
+### `runtime_metrics`
+
+Also export Go runtime metrics (memory, GC, goroutine count) and a process start time, for diagnosing leaks and restarts in long-running deployments.
+
+
+Type: `bool`  
+Default: `false`  
 
 
