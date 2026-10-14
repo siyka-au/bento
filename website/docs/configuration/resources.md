@@ -179,6 +179,8 @@ tracer:
 
 Settings specific to a single signal, such as trace sampling or the metrics push interval, are configured on the telemetry resource itself rather than on the `metrics`/`tracer` component. A `resource` reference only carries a label, so there is nowhere else for them to live, and keeping them on the resource means every signal sharing a collector agrees on them.
 
+Setting `metrics.runtime_metrics: true` on a telemetry resource also exports Go runtime metrics (memory, GC, goroutine count) and a process start time alongside the pipeline's own metrics, which is useful for diagnosing leaks and restarts in long-running deployments. It's opt-in and defaults to `false`.
+
 For a hosted backend that isn't reachable by a plain `address`, a collector can instead give a `url` plus `headers`. An http collector's `url` is a base URL: each signal is sent to it with `/v1/traces`, `/v1/metrics` or `/v1/logs` appended, and TLS follows the URL's scheme. This is the form hosted backends such as Grafana Cloud expect, authenticated with a header built from an environment variable:
 
 ```yaml

@@ -100,6 +100,13 @@ func (r *Resource) Label() string {
 	return r.conf.Label
 }
 
+// RuntimeMetricsEnabled reports whether metrics.runtime_metrics is set on
+// this resource, so a caller building a MeterProvider from it knows whether
+// to also start Go runtime instrumentation.
+func (r *Resource) RuntimeMetricsEnabled() bool {
+	return r.conf.OpenTelemetryCollector.Metrics.RuntimeMetrics
+}
+
 // OTelResource returns the underlying OpenTelemetry resource shared by every
 // provider this Resource creates.
 func (r *Resource) OTelResource() *resource.Resource {

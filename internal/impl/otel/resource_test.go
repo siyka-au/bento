@@ -83,6 +83,31 @@ func TestMetricsResourceOK(t *testing.T) {
 	require.NotNil(t, ns)
 }
 
+// TestMetricsResourceRuntimeMetricsEnabled proves runtime_metrics flows from
+// a telemetry resource's config through to the "resource" metrics type
+// starting Go runtime instrumentation, without erroring.
+func TestMetricsResourceRuntimeMetricsEnabled(t *testing.T) {
+	mgr := mock.NewManager()
+	reg, err := telemetry.NewRegistry([]telemetry.Config{
+		{
+			Label: "otel",
+			OpenTelemetryCollector: telemetry.OTelCollectorConfig{
+				GRPC: []telemetry.Collector{{Address: "localhost:4317"}},
+				Metrics: telemetry.MetricsConfig{
+					PushInterval:   "10s",
+					RuntimeMetrics: true,
+				},
+			},
+		},
+	}, "")
+	require.NoError(t, err)
+	mgr.SetGeneric(telemetry.ManagerKey, reg)
+
+	ns, err := bundle.AllMetrics.Init(metrics.Config{Type: "resource", Plugin: "otel"}, mgr)
+	require.NoError(t, err)
+	require.NotNil(t, ns)
+}
+
 func TestMetricsResourceUnknownLabel(t *testing.T) {
 	mgr := mock.NewManager()
 	mgr.SetGeneric(telemetry.ManagerKey, newTestRegistry(t))

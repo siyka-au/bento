@@ -66,6 +66,22 @@ open_telemetry_collector:
 	assert.Equal(t, SamplingConfig{Enabled: false, Ratio: 0}, conf.OpenTelemetryCollector.Traces.Sampling)
 	assert.Equal(t, "10s", conf.OpenTelemetryCollector.Metrics.PushInterval)
 	assert.Empty(t, conf.OpenTelemetryCollector.Metrics.HistogramBuckets)
+	assert.False(t, conf.OpenTelemetryCollector.Metrics.RuntimeMetrics)
+}
+
+func TestFromParsedRuntimeMetricsRoundTrip(t *testing.T) {
+	pConf := parseConfig(t, `
+label: my_resource
+open_telemetry_collector:
+  grpc:
+    - address: localhost:4317
+  metrics:
+    runtime_metrics: true
+`)
+
+	conf, err := FromParsed(pConf)
+	require.NoError(t, err)
+	assert.True(t, conf.OpenTelemetryCollector.Metrics.RuntimeMetrics)
 }
 
 func TestFromParsedHistogramBucketsRoundTrip(t *testing.T) {

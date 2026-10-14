@@ -130,6 +130,16 @@ This is a prototype for upstream issue
 following a suggestion on that issue to model OTel backends as Bento
 resources rather than as per-signal config.
 
+### Added
+
+- `metrics.runtime_metrics` (default `false`) on a telemetry resource's
+  `open_telemetry_collector`, and on the inline `otel` metrics exporter,
+  starts the official OpenTelemetry Go runtime instrumentation
+  (`go.opentelemetry.io/contrib/instrumentation/runtime`) against the same
+  provider: memory, GC and goroutine metrics, plus a `process_start_time`
+  gauge the runtime package doesn't provide. Useful for diagnosing leaks and
+  restarts in long-running deployments.
+
 Known limitations:
 
 - Telemetry resources are fixed at startup. They are not reloaded by

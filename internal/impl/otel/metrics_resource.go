@@ -18,6 +18,11 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
+		if res.RuntimeMetricsEnabled() {
+			if err := startRuntimeMetrics(provider); err != nil {
+				return nil, err
+			}
+		}
 		return newMetricsCore(provider), nil
 	}, docs.ComponentSpec{
 		Name:    "resource",

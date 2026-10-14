@@ -79,6 +79,18 @@ func TestResourceLabel(t *testing.T) {
 	assert.Equal(t, "my-label", r.Label())
 }
 
+func TestResourceRuntimeMetricsEnabled(t *testing.T) {
+	r, err := newResource(baseConf("test"), "")
+	require.NoError(t, err)
+	assert.False(t, r.RuntimeMetricsEnabled())
+
+	conf := baseConf("test")
+	conf.OpenTelemetryCollector.Metrics.RuntimeMetrics = true
+	r, err = newResource(conf, "")
+	require.NoError(t, err)
+	assert.True(t, r.RuntimeMetricsEnabled())
+}
+
 func TestResourceProvidersConstructAndShutdown(t *testing.T) {
 	conf := baseConf("test")
 	r, err := newResource(conf, "1.2.3")

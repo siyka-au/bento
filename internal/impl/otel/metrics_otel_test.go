@@ -117,6 +117,22 @@ func TestOtelTimerDefaultBucketsAreSecondScale(t *testing.T) {
 	}
 }
 
+// TestNewOtelMetricsRuntimeMetricsEnabled proves runtime_metrics flows from
+// the inline otel exporter's own config through to starting Go runtime
+// instrumentation, without erroring.
+func TestNewOtelMetricsRuntimeMetricsEnabled(t *testing.T) {
+	conf, err := metricsSpec().ParseYAML(`
+grpc:
+  - address: localhost:4317
+runtime_metrics: true
+`, nil)
+	require.NoError(t, err)
+
+	exp, err := newOtelMetricsFromParsed(conf)
+	require.NoError(t, err)
+	require.NotNil(t, exp)
+}
+
 func TestHistogramBucketsViewEmptyIsNoOp(t *testing.T) {
 	opt, err := histogramBucketsView(nil)
 	require.NoError(t, err)
