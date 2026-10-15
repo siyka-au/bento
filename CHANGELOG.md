@@ -3,6 +3,12 @@ Changelog
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+
+ - `otel` metrics exporter that pushes metrics over OTLP (gRPC or HTTP), with optional `histogram_buckets` and opt-in Go `runtime_metrics` @piratecarrot
+
 ## 1.22.0 - 2026-10-09
 
 ### Added
