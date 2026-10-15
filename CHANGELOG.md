@@ -3,6 +3,14 @@ Changelog
 
 All notable changes to this project will be documented in this file.
 
+## [fork] Configurable log file rotation
+
+Also proposed upstream on the `feat/log-file-rotation` branch.
+
+### Added
+
+ - `logger.file` fields `rotate_max_size_mb`, `rotate_max_backups` & `rotate_compress`, which were previously fixed at 10 MB, one backup & gzip @piratecarrot
+
 ## [fork] slog-native logging and OTel log export
 
 Bento's logger was backed by logrus, which predates the standard library's
@@ -39,8 +47,6 @@ level=WARN msg="Warning message" @service=bento foo=bar count=10
 ```
 
 ### Added
-
- - `logger.file` fields `rotate_max_size_mb`, `rotate_max_backups` & `rotate_compress`, which were previously fixed at 10 MB, one backup & gzip @piratecarrot
 
 ```yaml
 telemetry_resources:
