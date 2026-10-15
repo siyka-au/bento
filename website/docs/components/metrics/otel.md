@@ -47,6 +47,8 @@ metrics:
     grpc: []
     tags: {}
     push_interval: 10s
+    histogram_buckets: []
+    runtime_metrics: false
   mapping: ""
 ```
 
@@ -128,5 +130,21 @@ The interval between pushes of accumulated metrics to the collector.
 
 Type: `string`  
 Default: `"10s"`  
+
+### `histogram_buckets`
+
+Timing metrics histogram buckets, in seconds. If left empty, defaults to the same buckets as Bento's `prometheus` metrics exporter (`[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]`). The smallest default bucket is 5ms, so fast pipelines may want finer buckets, e.g. `[0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1]`.
+
+
+Type: `array`  
+Default: `[]`  
+
+### `runtime_metrics`
+
+Also export Go runtime metrics (memory, GC, goroutine count) and a process start time, for diagnosing leaks and restarts in long-running deployments.
+
+
+Type: `bool`  
+Default: `false`  
 
 
