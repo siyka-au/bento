@@ -40,6 +40,8 @@ level=WARN msg="Warning message" @service=bento foo=bar count=10
 
 ### Added
 
+ - `logger.file` fields `rotate_max_size_mb`, `rotate_max_backups` & `rotate_compress`, which were previously fixed at 10 MB, one backup & gzip @piratecarrot
+
 ```yaml
 telemetry_resources:
   - label: otel
