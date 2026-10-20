@@ -190,6 +190,12 @@ upstream release that includes them.
   (e.g. from `extract_tracing_map`) follow it. Telemetry resources do the same.
 - The shutdown message about possible duplicate delivery is logged at WARN
   instead of INFO.
+- Cancelling the context passed to `RunCLI`/`RunCLIWithArgs` now triggers
+  graceful termination within `shutdown_timeout`, instead of failing shutdown
+  instantly and forcing the process to exit uncleanly.
+- `service.CLIOptSetErrWriter` lets an embedder redirect CLI error messages
+  that occur before the configured logger exists (e.g. a config file failing
+  to load), which previously always went to `os.Stderr`.
 
 ## Phase 2 (planned, not yet implemented): trace instrumentation
 
