@@ -196,6 +196,9 @@ upstream release that includes them.
 - `service.CLIOptSetErrWriter` lets an embedder redirect CLI error messages
   that occur before the configured logger exists (e.g. a config file failing
   to load), which previously always went to `os.Stderr`.
+- `CLIOptAddTeeLogger` messages are now formatted before being forwarded,
+  instead of arriving with unexpanded printf verbs and `!BADKEY` attrs when
+  the tee is a `*slog.Logger`.
 
 ## Phase 2 (planned, not yet implemented): trace instrumentation
 
