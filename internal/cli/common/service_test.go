@@ -2,6 +2,7 @@ package common_test
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -10,6 +11,8 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/warpstreamlabs/bento/internal/cli/common"
+
+	_ "github.com/warpstreamlabs/bento/public/components/pure"
 )
 
 // TestRunServiceErrWriter proves that an error raised before the service
@@ -52,4 +55,59 @@ func TestRunServiceErrWriter(t *testing.T) {
 
 	assert.Equal(t, 1, code)
 	assert.Contains(t, errBuf.String(), "Configuration file read error")
+}
+
+// TestRunServiceTelemetryResourceErrWriter proves that a fork-only failure
+// raised before the service logger exists (here: two telemetry_resources
+// entries sharing a label, rejected by telemetry.NewRegistry) is also
+// written to CLIOpts.ErrWriter rather than being hard-wired to os.Stderr.
+//
+// RunService is exercised directly for the same reason as
+// TestRunServiceErrWriter: the App's own Action wraps RunService's
+// non-zero return code in an os.Exit call.
+func TestRunServiceTelemetryResourceErrWriter(t *testing.T) {
+	cliOpts := common.NewCLIOpts("1.2.3", "aaa")
+
+	var errBuf bytes.Buffer
+	cliOpts.ErrWriter = &errBuf
+
+	confPath := filepath.Join(t.TempDir(), "conf.yaml")
+	conf := `
+input:
+  generate:
+    mapping: 'root = {}'
+output:
+  drop: {}
+telemetry_resources:
+  - label: dup
+    open_telemetry_collector:
+      grpc:
+        - address: localhost:4317
+  - label: dup
+    open_telemetry_collector:
+      grpc:
+        - address: localhost:4317
+`
+	require.NoError(t, os.WriteFile(confPath, []byte(conf), 0o644))
+
+	app := &cli.App{
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "config", Aliases: []string{"c"}},
+			&cli.StringSliceFlag{Name: "set", Aliases: []string{"s"}},
+			&cli.StringSliceFlag{Name: "resources", Aliases: []string{"r"}},
+			&cli.BoolFlag{Name: "chilled"},
+			&cli.BoolFlag{Name: "watcher", Aliases: []string{"w"}},
+		},
+	}
+
+	var code int
+	app.Action = func(c *cli.Context) error {
+		code = common.RunService(c, cliOpts, false)
+		return nil
+	}
+
+	require.NoError(t, app.Run([]string{"bento", "-c", confPath}))
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, errBuf.String(), "Telemetry resource error")
 }

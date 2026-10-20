@@ -36,7 +36,7 @@ func RunService(c *cli.Context, cliOpts *CLIOpts, streamsMode bool) int {
 
 	reg, err := telemetry.NewRegistry(conf.ResourceConfig.ResourceTelemetry, cliOpts.Version)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Telemetry resource error: %v\n", err)
+		cliOpts.Errorf("Telemetry resource error: %v\n", err)
 		return 1
 	}
 
