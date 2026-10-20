@@ -2,6 +2,7 @@ package common
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -84,4 +85,13 @@ func (c *CLIOpts) ExecTemplate(str string) string {
 	}
 
 	return buf.String()
+}
+
+// Errorf writes a formatted failure message to ErrWriter (os.Stderr by
+// default). It is the single choke point every failure that occurs before
+// the configured logger exists (or that otherwise needs to bypass it) along
+// the run path should go through, so that a program embedding the CLI via
+// public/service.RunCLI and CLIOptSetErrWriter can observe and capture it.
+func (c *CLIOpts) Errorf(format string, args ...any) {
+	fmt.Fprintf(c.ErrWriter, format, args...)
 }
