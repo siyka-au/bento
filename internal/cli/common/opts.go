@@ -2,6 +2,7 @@ package common
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path"
 	"text/template"
@@ -28,6 +29,11 @@ type CLIOpts struct {
 	MainConfigSpecCtor   func() docs.FieldSpecs // TODO: This becomes a service.Environment
 	OnManagerInitialised func(mgr bundle.NewManagement, pConf *docs.ParsedConfig) error
 	OnLoggerInit         func(l log.Modular) (log.Modular, error)
+
+	// ErrWriter receives error messages that occur before the configured
+	// logger exists (or that otherwise bypass it) along the run path, such
+	// as a config file failing to load. It defaults to os.Stderr.
+	ErrWriter io.Writer
 }
 
 func NewCLIOpts(version, dateBuilt string) *CLIOpts {
@@ -48,6 +54,7 @@ func NewCLIOpts(version, dateBuilt string) *CLIOpts {
 			"/etc/bento.yaml",
 		},
 		MainConfigSpecCtor: config.Spec,
+		ErrWriter:          os.Stderr,
 		OnManagerInitialised: func(mgr bundle.NewManagement, pConf *docs.ParsedConfig) error {
 			return nil
 		},

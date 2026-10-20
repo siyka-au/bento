@@ -168,12 +168,12 @@ func preRun(c *cli.Context, opts *common.CLIOpts) error {
 	}
 	lints, err := template.InitTemplates(templatesPaths...)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Template file read error: %v\n", err)
+		fmt.Fprintf(opts.ErrWriter, "Template file read error: %v\n", err)
 		os.Exit(1)
 	}
 	if !c.Bool("chilled") && len(lints) > 0 {
 		for _, lint := range lints {
-			fmt.Fprintln(os.Stderr, lint)
+			fmt.Fprintln(opts.ErrWriter, lint)
 		}
 		fmt.Println(opts.ExecTemplate("Shutting down due to linter errors, to prevent shutdown run {{.ProductName}} with --chilled"))
 		os.Exit(1)
@@ -184,6 +184,9 @@ func preRun(c *cli.Context, opts *common.CLIOpts) error {
 // App returns the full CLI app definition, this is useful for writing unit
 // tests around the CLI.
 func App(opts *common.CLIOpts) *cli.App {
+	if opts.ErrWriter == nil {
+		opts.ErrWriter = os.Stderr
+	}
 	flags := []cli.Flag{
 		&cli.BoolFlag{
 			Name:    "version",
@@ -216,7 +219,8 @@ Either run {{.ProductName}} as a stream processor or choose a command:
   {{.BinaryName}} create kafka//file > ./config.yaml
   {{.BinaryName}} -c ./config.yaml
   {{.BinaryName}} -r "./production/*.yaml" -c ./config.yaml`)[1:],
-		Flags: flags,
+		Flags:     flags,
+		ErrWriter: opts.ErrWriter,
 		Before: func(c *cli.Context) error {
 			return preRun(c, opts)
 		},
@@ -230,7 +234,7 @@ Either run {{.ProductName}} as a stream processor or choose a command:
 				os.Exit(0)
 			}
 			if c.Args().Len() > 0 {
-				fmt.Fprintf(os.Stderr, "Unrecognised command: %v\n", c.Args().First())
+				fmt.Fprintf(opts.ErrWriter, "Unrecognised command: %v\n", c.Args().First())
 				_ = cli.ShowAppHelp(c)
 				os.Exit(1)
 			}
@@ -293,7 +297,7 @@ Run a {{.ProductName}} config.
 				Action: func(c *cli.Context) error {
 					if c.Args().Len() > 0 {
 						if c.Args().Len() > 1 {
-							fmt.Fprintln(os.Stderr, "A maximum of one config must be specified with the run command")
+							fmt.Fprintln(opts.ErrWriter, "A maximum of one config must be specified with the run command")
 							os.Exit(1)
 						}
 						_ = c.Set("config", c.Args().First())
