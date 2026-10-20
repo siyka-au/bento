@@ -178,7 +178,7 @@ func RunManagerUntilStopped(
 		// already triggers shutdown early enough to finish gracefully
 		// before that deadline is reached.
 		cleanupBase := c.Context
-		if errors.Is(c.Context.Err(), context.Canceled) {
+		if errors.Is(c.Err(), context.Canceled) {
 			cleanupBase = context.WithoutCancel(c.Context)
 		}
 
